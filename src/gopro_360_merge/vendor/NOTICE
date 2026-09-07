@@ -1,0 +1,12 @@
+udtacopy
+========
+
+This package redistributes prebuilt binaries of udtacopy from GoPro Labs:
+
+  https://github.com/gopro/labs
+  https://gopro.github.io/labs/control/chapters/
+
+Source: docs/control/chapters/bin/udtacopy.zip
+Copyright (C) GoPro Inc.
+Licensed under the Apache License, Version 2.0:
+  http://www.apache.org/licenses/LICENSE-2.0

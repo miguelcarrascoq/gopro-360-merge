@@ -13,7 +13,9 @@ GS011624.360  GS021624.360  …  GS051624.360   →  block 1624
 
 - Python 3.11+
 - [ffmpeg](https://ffmpeg.org/) (includes `ffprobe`) — e.g. `brew install ffmpeg`
-- [`udtacopy`](https://gopro.github.io/labs/control/chapters/) — download `udtacopy.zip`, pick the binary for your OS, and put it on your `PATH`
+- [`udtacopy`](https://gopro.github.io/labs/control/chapters/) — bundled with this package and extracted automatically on first use if not already on your `PATH`
+
+On macOS, Gatekeeper may block the first run of the bundled binary; use **System Settings → Privacy & Security → Open Anyway** if prompted.
 
 ## Install
 

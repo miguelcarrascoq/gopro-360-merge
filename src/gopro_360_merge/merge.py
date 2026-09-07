@@ -11,6 +11,7 @@ from pathlib import Path
 
 from gopro_360_merge.detect import Block
 from gopro_360_merge.progress import FfmpegProgressTracker
+from gopro_360_merge.udtacopy_tool import ensure_udtacopy, resolve_udtacopy
 
 ProgressCallback = Callable[[str, float, float], None]
 
@@ -22,9 +23,11 @@ def which_or_none(name: str) -> str | None:
 def require_tools() -> list[str]:
     """Return names of missing required tools."""
     missing: list[str] = []
-    for tool in ("ffmpeg", "ffprobe", "udtacopy"):
+    for tool in ("ffmpeg", "ffprobe"):
         if which_or_none(tool) is None:
             missing.append(tool)
+    if ensure_udtacopy() is None:
+        missing.append("udtacopy")
     return missing
 
 
@@ -118,7 +121,8 @@ def run_ffmpeg_concat(
 
 
 def run_udtacopy(source_360: Path, dest_mp4: Path) -> None:
-    cmd = ["udtacopy", str(source_360), str(dest_mp4)]
+    udtacopy = resolve_udtacopy()
+    cmd = [str(udtacopy), str(source_360), str(dest_mp4)]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -22,13 +23,9 @@ from rich.table import Table
 from gopro_360_merge import __version__
 from gopro_360_merge.detect import Block, scan_directory
 from gopro_360_merge.merge import merge_block, require_tools
+from gopro_360_merge.udtacopy_tool import resolve_udtacopy
 
 console = Console()
-
-UDTACOPY_HELP = (
-    "https://gopro.github.io/labs/control/chapters/ "
-    "(download udtacopy.zip and put the binary on your PATH)"
-)
 
 
 def format_size(num_bytes: int) -> str:
@@ -75,10 +72,15 @@ def select_blocks(blocks: list[Block]) -> list[Block]:
 def check_dependencies() -> bool:
     missing = require_tools()
     if not missing:
+        udtacopy = resolve_udtacopy()
+        if shutil.which("udtacopy") is None:
+            console.print(f"[dim]Using bundled udtacopy → {udtacopy}[/dim]")
         return True
     console.print("[red]Missing required tools:[/red] " + ", ".join(missing))
     if "udtacopy" in missing:
-        console.print(f"  Install udtacopy from {UDTACOPY_HELP}")
+        console.print(
+            "  Could not extract the bundled udtacopy binary for this platform."
+        )
     if "ffmpeg" in missing or "ffprobe" in missing:
         console.print("  Install ffmpeg (includes ffprobe), e.g. `brew install ffmpeg`")
     return False
