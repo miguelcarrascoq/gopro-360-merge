@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gopro-360-merge"
+version = "0.1.0"
+description = "Interactive CLI to merge chaptered GoPro .360 files by recording block"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "miguelcarrascoq" }]
+dependencies = [
+    "rich>=13.0",
+    "questionary>=2.0",
+]
+
+[project.scripts]
+gopro-360-merge = "gopro_360_merge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
