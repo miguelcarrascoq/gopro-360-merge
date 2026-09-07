@@ -25,18 +25,23 @@ cd gopro-360-merge
 python3 -m pip install -e .
 ```
 
+Or use `./run.sh` (below): it creates `.venv`, installs the package, and on macOS with Homebrew installs `ffmpeg` if missing.
+
 ## Usage
 
 ```bash
-# Interactive: scan current directory, pick blocks, merge
+# Recommended: bootstrap + ask/confirm folder, then merge UI
+./run.sh
+./run.sh /path/to/gopro/folder
+./run.sh /path/to/gopro/folder --all -y
+
+# Direct CLI (after pip install -e .)
 gopro-360-merge /path/to/gopro/folder
-
-# Merge all blocks without the checkbox UI
 gopro-360-merge /path/to/gopro/folder --all -y
-
-# Custom output directory
 gopro-360-merge /path/to/gopro/folder -o /path/to/output
 ```
+
+`./run.sh` asks for the GoPro folder first (or shows the path you passed and only confirms), then runs the merge flow.
 
 For each selected block the tool:
 
