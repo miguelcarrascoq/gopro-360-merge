@@ -120,13 +120,86 @@ def run_ffmpeg_concat(
         raise RuntimeError(f"ffmpeg failed (exit {code}): {stderr.strip()}")
 
 
+def _top_level_atoms(path: Path) -> list[tuple[bytes, int, int]]:
+    """Return [(fourcc, offset, size), ...] for top-level MP4 atoms."""
+    atoms: list[tuple[bytes, int, int]] = []
+    file_size = path.stat().st_size
+    with path.open("rb") as fp:
+        pos = 0
+        while pos + 8 <= file_size:
+            fp.seek(pos)
+            hdr = fp.read(8)
+            if len(hdr) < 8:
+                break
+            size32 = int.from_bytes(hdr[:4], "big")
+            tag = hdr[4:8]
+            if size32 == 1:
+                ext = fp.read(8)
+                if len(ext) < 8:
+                    break
+                size = int.from_bytes(ext, "big")
+            elif size32 == 0:
+                size = file_size - pos
+            else:
+                size = size32
+            if size < 8:
+                break
+            atoms.append((tag, pos, size))
+            pos += size
+    return atoms
+
+
+def _moov_has_udta(path: Path) -> bool:
+    """True if the file's moov atom contains a udta child (GoPro metadata)."""
+    for tag, offset, size in _top_level_atoms(path):
+        if tag != b"moov":
+            continue
+        end = offset + size
+        pos = offset + 8
+        with path.open("rb") as fp:
+            while pos + 8 <= end:
+                fp.seek(pos)
+                hdr = fp.read(8)
+                if len(hdr) < 8:
+                    return False
+                child_size = int.from_bytes(hdr[:4], "big")
+                child_tag = hdr[4:8]
+                if child_size == 1:
+                    ext = fp.read(8)
+                    if len(ext) < 8:
+                        return False
+                    child_size = int.from_bytes(ext, "big")
+                elif child_size == 0:
+                    child_size = end - pos
+                if child_size < 8:
+                    return False
+                if child_tag == b"udta":
+                    return True
+                pos += child_size
+        return False
+    return False
+
+
 def run_udtacopy(source_360: Path, dest_mp4: Path) -> None:
+    """
+    Copy GoPro udta metadata from *source_360* onto *dest_mp4*.
+
+    Upstream GoPro Labs ``udtacopy`` always exits with status 1, even on
+    success, so we accept 0/1 and verify that ``moov`` contains ``udta``.
+    """
     udtacopy = resolve_udtacopy()
     cmd = [str(udtacopy), str(source_360), str(dest_mp4)]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
+    # GoPro's binary returns 1 unconditionally after a normal run (success or
+    # silent no-op). Treat 0 and 1 as "ran"; confirm with a structure check.
+    if result.returncode not in (0, 1):
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(f"udtacopy failed (exit {result.returncode}): {detail}")
+    if not _moov_has_udta(dest_mp4):
+        raise RuntimeError(
+            "udtacopy finished but destination has no moov/udta metadata; "
+            "source may be missing GoPro udta or the copy silently failed"
+        )
 
 
 def merge_block(
