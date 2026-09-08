@@ -15,8 +15,8 @@ from pathlib import Path
 
 from gopro_360_merge.detect import Block, ChapterFile
 from gopro_360_merge.merge import (
-    concat_map_args,
     probe_duration_seconds,
+    probe_streams,
     run_udtacopy,
 )
 from gopro_360_merge.progress import FfmpegProgressTracker
@@ -119,6 +119,42 @@ def plan_trim_pieces(
     return pieces
 
 
+def trim_map_args(first_chapter: Path) -> list[str]:
+    """Maps for a Player-safe chapter remux (matches known-good short tests).
+
+    Keeps both HEVC lenses, AAC, and GPMF. Skips tmcd/fdsc (ffmpeg cannot mux
+    them cleanly) and ambisonic (ffmpeg rewrites ``in32`` → ``lpcm``, which
+    breaks uniform tags across remuxed pieces).
+    """
+    streams = probe_streams(first_chapter)
+    videos = [
+        s
+        for s in streams
+        if s.get("codec_type") == "video"
+        and (s.get("codec_tag_string") or "").strip() in {"hvc1", "hev1", "avc1"}
+    ]
+    aac = [
+        s for s in streams if (s.get("codec_tag_string") or "").strip() == "mp4a"
+    ]
+    gpmd = [
+        s for s in streams if (s.get("codec_tag_string") or "").strip() == "gpmd"
+    ]
+    if len(videos) < 2:
+        raise RuntimeError(
+            f"{first_chapter.name}: expected 2 video tracks for .360, "
+            f"found {len(videos)}"
+        )
+    if not gpmd:
+        raise RuntimeError(
+            f"{first_chapter.name}: missing GoPro gpmd metadata track"
+        )
+    selected = videos[:2] + aac[:1] + gpmd[:1]
+    args: list[str] = []
+    for stream in selected:
+        args.extend(["-map", f"0:{stream['index']}"])
+    return args
+
+
 def trim_chapter_file(
     source: Path,
     dest_mp4: Path,
@@ -127,7 +163,7 @@ def trim_chapter_file(
     on_progress: ProgressFn | None = None,
 ) -> None:
     """Stream-copy a time window out of one original .360 chapter."""
-    map_args = concat_map_args(source)
+    map_args = trim_map_args(source)
     cmd = [
         "ffmpeg",
         "-y",
@@ -193,16 +229,24 @@ def materialize_pieces(
     pieces: list[TrimPiece],
     temp_dir: Path,
     on_progress: ProgressFn | None = None,
+    *,
+    remux_all: bool = False,
 ) -> list[Path]:
-    """Write trimmed chapters to *temp_dir*; pass through originals unchanged."""
+    """Prepare chapter files for joining.
+
+    Untrimmed pieces are passed through as the original ``GS*.360`` paths
+    unless *remux_all* is set. Mid-chapter cuts must remux **every** selected
+    piece with the same ffmpeg recipe: mp4-merge corrupts the output if a
+    remuxed chapter (4–5 tracks) is mixed with camera originals (7 tracks).
+    """
     temp_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
-    trim_jobs = [p for p in pieces if p.needs_trim]
+    jobs = pieces if remux_all else [p for p in pieces if p.needs_trim]
     done = 0.0
-    total = float(max(len(trim_jobs), 1))
+    total = float(max(len(jobs), 1))
 
     for piece in pieces:
-        if not piece.needs_trim:
+        if not piece.needs_trim and not remux_all:
             paths.append(piece.chapter.path)
             continue
         dest = temp_dir / f"trim_{piece.chapter.path.stem}.mp4"

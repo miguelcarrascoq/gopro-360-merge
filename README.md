@@ -77,7 +77,13 @@ crop.bat D:\path\to\gopro\folder --start 00:02:00 --end 00:50:00 -y
 gopro-360-merge crop /path/to/gopro/folder --start 2:00 --end 50:00
 ```
 
-The crop tool maps the range onto the original chapters, stream-copies only the first/last chapter that needs a cut (~4 GB each, keyframe-aligned, about ±1 s), then joins with mp4-merge. Output is `merged/final_<id>_crop.360` so the full merge is left untouched.
+The crop tool maps the range onto the original chapters. Cuts on **chapter
+boundaries** only drop whole `GS*.360` files and join with mp4-merge (Player-safe
+for long files). A **mid-chapter** cut remuxes every selected chapter with the
+same ffmpeg recipe (mixing a remuxed chapter with camera originals corrupts the
+file), then joins those remuxes with ffmpeg concat + `udtacopy`. Stream-copy
+trim is keyframe-aligned (about ±1 s). Output is `merged/final_<id>_crop.360`
+so the full merge is left untouched.
 
 `--start` / `--end` also work on the merge command if you already know the times.
 

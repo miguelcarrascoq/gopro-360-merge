@@ -361,18 +361,31 @@ def merge_block(
             on_stage("join", current, total)
 
     sources = [ch.path for ch in block.chapters]
+    # Soft (mid-chapter) cuts remux every selected piece to one track layout.
+    # mp4-merge of remuxed+original mixes track counts and writes garbage;
+    # mp4-merge of remuxed+remuxed also breaks timestamps (start≈duration).
+    remuxed_sources = False
+    join_seconds = total_seconds
     if trimmed:
         range_start = 0.0 if start_s is None else start_s
         range_end = total_seconds if end_s is None else end_s
         pieces = plan_trim_pieces(block, range_start, range_end)
+        join_seconds = float(sum(p.duration for p in pieces))
+        soft_trim = any(p.needs_trim for p in pieces)
         if on_stage:
             on_stage("trim", 0.0, 1.0)
         try:
-            sources = materialize_pieces(
-                pieces,
-                temp_dir,
-                (lambda c, t: on_stage("trim", c, t) if on_stage else None),
-            )
+            if soft_trim:
+                sources = materialize_pieces(
+                    pieces,
+                    temp_dir,
+                    (lambda c, t: on_stage("trim", c, t) if on_stage else None),
+                    remux_all=True,
+                )
+                remuxed_sources = True
+            else:
+                # Whole chapters only: keep camera files and mp4-merge them.
+                sources = [p.chapter.path for p in pieces]
         except Exception:
             if temp_dir.exists():
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -385,7 +398,7 @@ def merge_block(
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     merger = ensure_mp4_merge()
-    if merger is not None:
+    if merger is not None and not remuxed_sources:
         try:
             if len(sources) == 1:
                 if on_stage:
@@ -414,9 +427,21 @@ def merge_block(
 
     map_args = concat_map_args(sources[0])
     if on_stage:
-        on_stage("join", 0.0, max(total_seconds, 0.001))
+        on_stage("join", 0.0, max(join_seconds, 0.001))
     try:
         if len(sources) == 1:
+            if remuxed_sources:
+                # Already a Player-safe remux; copy as final .360
+                if output_360.exists():
+                    output_360.unlink()
+                shutil.copy2(sources[0], output_360)
+                cleanup_temp()
+                if on_stage:
+                    on_stage("udtacopy", 1.0, 1.0)
+                    on_stage("rename", 1.0, 1.0)
+                if not keep_filelist and filelist_path.exists():
+                    filelist_path.unlink()
+                return output_360
             shutil.copy2(sources[0], output_mp4)
         else:
             trim_list = output_dir / f"filelist_{block.block_id}_crop.txt"
@@ -431,16 +456,17 @@ def merge_block(
                 trim_list,
             )
             run_ffmpeg_concat(
-                trim_list, output_mp4, total_seconds, map_args, join_progress
+                trim_list, output_mp4, join_seconds, map_args, join_progress
             )
             if not keep_filelist and trim_list.exists():
                 trim_list.unlink()
     finally:
-        cleanup_temp()
+        if not (remuxed_sources and len(sources) == 1):
+            cleanup_temp()
 
     if on_stage:
         on_stage("udtacopy", 0.0, 1.0)
-    run_udtacopy(block.first.path, output_mp4)
+    run_udtacopy(sources[0], output_mp4)
     if on_stage:
         on_stage("udtacopy", 1.0, 1.0)
 
