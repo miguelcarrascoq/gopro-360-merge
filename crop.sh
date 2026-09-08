@@ -87,6 +87,30 @@ resolve_directory() {
   fi
 }
 
+has_yes_flag() {
+  local f
+  for f in "$@"; do
+    case "$f" in
+      -y|--yes) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# If the folder prompt includes flags (e.g. "/path --start 00:00:27 -y"), split them.
+split_folder_and_flags() {
+  local raw="$1"
+  FOLDER_INPUT="$raw"
+  EXTRA_FLAGS=()
+  if [[ -d "$raw" ]]; then
+    return 0
+  fi
+  if [[ "$raw" =~ ^(.*)[[:space:]]+(-[A-Za-z].*)$ ]]; then
+    FOLDER_INPUT="${BASH_REMATCH[1]}"
+    read -r -a EXTRA_FLAGS <<< "${BASH_REMATCH[2]}"
+  fi
+}
+
 DIR_ARG=""
 FLAGS=()
 if (($# > 0)) && [[ "${1:-}" != -* ]]; then
@@ -103,16 +127,18 @@ ensure_ffmpeg
 echo
 if [[ -n "$DIR_ARG" ]]; then
   DIR="$(resolve_directory "$DIR_ARG")"
-  echo "Carpeta: $DIR"
-  if ! confirm_yes "Usar esta carpeta?"; then
-    echo "Cancelado."
-    exit 0
-  fi
 else
-  read -r -p "Carpeta con archivos GS*.360 originales [.]: " input || true
+  read -r -p "Carpeta GS*.360 (puedes pegar --start / --end / -y) [.]: " input || true
   input="${input:-.}"
-  DIR="$(resolve_directory "$input")"
-  echo "Carpeta: $DIR"
+  split_folder_and_flags "$input"
+  DIR="$(resolve_directory "$FOLDER_INPUT")"
+  if ((${#EXTRA_FLAGS[@]} > 0)); then
+    FLAGS+=("${EXTRA_FLAGS[@]}")
+  fi
+fi
+
+echo "Carpeta: $DIR"
+if ! has_yes_flag "${FLAGS[@]}"; then
   if ! confirm_yes "Usar esta carpeta?"; then
     echo "Cancelado."
     exit 0

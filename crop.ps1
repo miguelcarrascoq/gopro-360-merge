@@ -135,6 +135,32 @@ function Resolve-Directory([string]$Dir) {
     return $Dir
 }
 
+function Test-YesFlag($FlagList) {
+    foreach ($f in @($FlagList)) {
+        if ($f -eq "-y" -or $f -eq "--yes") {
+            return $true
+        }
+    }
+    return $false
+}
+
+# If the folder prompt includes flags (e.g. "D:\GoPro --start 00:00:27 -y"), split them.
+function Split-FolderAndFlags([string]$Raw) {
+    $raw = $Raw.Trim()
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return @{ Dir = "."; ExtraFlags = @() }
+    }
+    if (Test-Path -LiteralPath $raw -PathType Container) {
+        return @{ Dir = $raw; ExtraFlags = @() }
+    }
+    if ($raw -match '^(?<dir>.+?)\s+(?<flags>-(?:-)?[A-Za-z].*)$') {
+        $dirPart = $Matches["dir"].Trim().Trim('"')
+        $flagTokens = $Matches["flags"] -split '\s+' | Where-Object { $_ -ne "" }
+        return @{ Dir = $dirPart; ExtraFlags = @($flagTokens) }
+    }
+    return @{ Dir = $raw; ExtraFlags = @() }
+}
+
 $DirArg = $null
 $Flags = @()
 if ($args.Count -gt 0 -and -not ($args[0] -like "-*")) {
@@ -154,18 +180,20 @@ Ensure-Ffmpeg
 Write-Host ""
 if ($null -ne $DirArg -and $DirArg -ne "") {
     $Dir = Resolve-Directory $DirArg
-    Write-Host "Carpeta: $Dir"
-    if (-not (Confirm-Yes "Usar esta carpeta?")) {
-        Write-Host "Cancelado."
-        exit 0
-    }
 } else {
-    $folderInput = Read-Host "Carpeta con archivos GS*.360 originales [.]"
+    $folderInput = Read-Host "Carpeta GS*.360 (puedes pegar --start / --end / -y) [.]"
     if ([string]::IsNullOrWhiteSpace($folderInput)) {
         $folderInput = "."
     }
-    $Dir = Resolve-Directory $folderInput
-    Write-Host "Carpeta: $Dir"
+    $parsed = Split-FolderAndFlags $folderInput
+    $Dir = Resolve-Directory $parsed.Dir
+    if ($parsed.ExtraFlags.Count -gt 0) {
+        $Flags = @($Flags) + @($parsed.ExtraFlags)
+    }
+}
+
+Write-Host "Carpeta: $Dir"
+if (-not (Test-YesFlag $Flags)) {
     if (-not (Confirm-Yes "Usar esta carpeta?")) {
         Write-Host "Cancelado."
         exit 0
