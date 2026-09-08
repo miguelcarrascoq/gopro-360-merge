@@ -205,7 +205,11 @@ class App(ctk.CTk):
         bottom.grid_columnconfigure(0, weight=1)
         bottom.grid_rowconfigure(2, weight=1)
 
-        self.status_label = ctk.CTkLabel(bottom, text="Listo.", anchor="w")
+        self.status_label = ctk.CTkLabel(
+            bottom,
+            text="Elige una carpeta y pulsa Escanear.",
+            anchor="w",
+        )
         self.status_label.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
         self.progress = ctk.CTkProgressBar(bottom)
         self.progress.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
@@ -214,6 +218,31 @@ class App(ctk.CTk):
         self.log_box = ctk.CTkTextbox(bottom, height=140)
         self.log_box.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.log_box.configure(state="disabled")
+
+    def _set_status(self, text: str) -> None:
+        self.status_label.configure(text=text)
+
+    def _refresh_idle_status(self) -> None:
+        """Status when not merging — mirrors what the user still needs to do."""
+        if self._busy:
+            return
+        if not self._blocks:
+            folder = self.folder_var.get().strip()
+            if not folder:
+                self._set_status("Elige una carpeta y pulsa Escanear.")
+            else:
+                self._set_status("Sin bloques detectados. Elige otra carpeta o vuelve a escanear.")
+            return
+        selected = self._selected_blocks()
+        if not selected:
+            self._set_status("Selecciona uno o más bloques.")
+            return
+        if not self.output_var.get().strip():
+            self._set_status("Indica la carpeta de salida.")
+            return
+        n = len(selected)
+        noun = "bloque" if n == 1 else "bloques"
+        self._set_status(f"Listo para merge ({n} {noun}).")
 
     def _log(self, message: str) -> None:
         self.log_box.configure(state="normal")
@@ -237,6 +266,7 @@ class App(ctk.CTk):
         path = filedialog.askdirectory(title="Carpeta de salida")
         if path:
             self.output_var.set(path)
+            self._refresh_idle_status()
 
     def _clear_blocks_ui(self) -> None:
         for child in self.blocks_list.winfo_children():
@@ -247,16 +277,20 @@ class App(ctk.CTk):
         raw = self.folder_var.get().strip()
         if not raw:
             messagebox.showwarning("Carpeta", "Elige una carpeta con archivos GS*.360.")
+            self._refresh_idle_status()
             return
         source = Path(raw).expanduser().resolve()
         if not source.is_dir():
             messagebox.showerror("Carpeta", f"No es un directorio:\n{source}")
+            self._refresh_idle_status()
             return
 
+        self._set_status("Escaneando…")
         try:
             blocks = scan_directory(source)
         except NotADirectoryError as exc:
             messagebox.showerror("Carpeta", str(exc))
+            self._refresh_idle_status()
             return
 
         self._blocks = blocks
@@ -274,6 +308,7 @@ class App(ctk.CTk):
             ).grid(row=0, column=0, sticky="w", padx=2, pady=4)
             self.duration_label.configure(text="Duración: —")
             self._log(f"Sin bloques en {source}")
+            self._refresh_idle_status()
             return
 
         for i, block in enumerate(blocks):
@@ -316,14 +351,17 @@ class App(ctk.CTk):
         selected = self._selected_blocks()
         if not selected:
             self.duration_label.configure(text="Duración: — (ningún bloque seleccionado)")
+            self._refresh_idle_status()
             return
 
         missing = [b for b in selected if b.block_id not in self._durations]
         if not missing:
             self._update_duration_label(selected)
+            self._refresh_idle_status()
             return
 
         self.duration_label.configure(text="Duración: calculando…")
+        self._set_status("Calculando duración…")
         ids = [b.block_id for b in missing]
 
         def worker() -> None:
@@ -381,7 +419,7 @@ class App(ctk.CTk):
 
         self._set_busy(True)
         self.progress.set(0)
-        self.status_label.configure(text="Iniciando…")
+        self._set_status("Iniciando merge…")
         self._log("---")
         self._log(f"Iniciando merge de {len(selected)} bloque(s)")
 
@@ -431,12 +469,13 @@ class App(ctk.CTk):
                     for err in errors:
                         self._log(f"Duración: {err}")
                     self._update_duration_label(self._selected_blocks())
+                    self._refresh_idle_status()
                 elif kind == "status":
-                    self.status_label.configure(text=event[1])
+                    self._set_status(event[1])
                 elif kind == "progress":
                     _, overall, label = event
                     self.progress.set(max(0.0, min(overall, 1.0)))
-                    self.status_label.configure(text=label)
+                    self._set_status(label)
                 elif kind == "log":
                     self._log(event[1])
                 elif kind == "done":
@@ -444,8 +483,8 @@ class App(ctk.CTk):
                     self._set_busy(False)
                     if failures:
                         self.progress.set(1.0)
-                        self.status_label.configure(
-                            text=f"Terminado con {failures} error(es)."
+                        self._set_status(
+                            f"Terminado con {failures} error(es)."
                         )
                         self._log(f"Finalizado con {failures}/{total} fallos.")
                         messagebox.showwarning(
@@ -454,7 +493,9 @@ class App(ctk.CTk):
                         )
                     else:
                         self.progress.set(1.0)
-                        self.status_label.configure(text="Completado.")
+                        self._set_status(
+                            f"Merge completado ({total} bloque(s))."
+                        )
                         self._log("Todos los bloques procesados correctamente.")
                         messagebox.showinfo(
                             "Resultado",
