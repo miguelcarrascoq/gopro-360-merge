@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from gopro_360_merge.detect import Block
+from gopro_360_merge.detect import Block, ChapterFile
 from gopro_360_merge.mp4_merge_tool import ensure_mp4_merge
 from gopro_360_merge.progress import FfmpegProgressTracker
 from gopro_360_merge.udtacopy_tool import ensure_udtacopy, resolve_udtacopy
@@ -281,18 +281,28 @@ def run_udtacopy(source_360: Path, dest_mp4: Path) -> None:
 
 
 def run_mp4_merge(
-    block: Block,
+    sources: list[Path],
     output_360: Path,
     on_progress: Callable[[float, float], None] | None = None,
+    expected_bytes: int | None = None,
 ) -> None:
     """Join chapters with gyroflow mp4-merge, preserving camera MP4 structure."""
     merger = ensure_mp4_merge()
     if merger is None:
         raise RuntimeError("mp4-merge is not available")
-    expected = float(max(block.size_bytes, 1))
+    if len(sources) < 1:
+        raise RuntimeError("mp4-merge needs at least one source file")
+    if expected_bytes is None:
+        expected_bytes = sum(p.stat().st_size for p in sources)
+    expected = float(max(expected_bytes, 1))
     if output_360.exists():
         output_360.unlink()
-    cmd = [str(merger), *[str(c.path.resolve()) for c in block.chapters], "--out", str(output_360)]
+    cmd = [
+        str(merger),
+        *[str(p.resolve()) for p in sources],
+        "--out",
+        str(output_360),
+    ]
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     while proc.poll() is None:
         if on_progress and output_360.exists():
@@ -313,17 +323,30 @@ def merge_block(
     *,
     keep_filelist: bool = True,
     on_stage: ProgressCallback | None = None,
+    start_s: float | None = None,
+    end_s: float | None = None,
+    output_stem: str | None = None,
 ) -> Path:
     """
     Merge all chapters in *block* into ``final_<id>.360`` under *output_dir*.
 
+    Optional *start_s* / *end_s* trim the timeline (see ``trim.py``). A trim
+    writes ``final_<id>_crop.360`` unless *output_stem* is set.
+
     Stages reported via on_stage(stage, current, total):
-      - probe / join / udtacopy / rename
+      - probe / trim / join / udtacopy / rename
     """
+    from gopro_360_merge.trim import materialize_pieces, plan_trim_pieces
+
     output_dir.mkdir(parents=True, exist_ok=True)
     filelist_path = output_dir / f"filelist_{block.block_id}.txt"
     output_mp4 = output_dir / f"final_{block.block_id}.mp4"
-    output_360 = output_dir / f"final_{block.block_id}.360"
+    trimmed = start_s is not None or end_s is not None
+    stem = output_stem or (
+        f"final_{block.block_id}_crop" if trimmed else f"final_{block.block_id}"
+    )
+    output_360 = output_dir / f"{stem}.360"
+    temp_dir = output_dir / f".trim_{block.block_id}"
 
     if on_stage:
         on_stage("probe", 0.0, 1.0)
@@ -337,11 +360,51 @@ def merge_block(
         if on_stage:
             on_stage("join", current, total)
 
+    sources = [ch.path for ch in block.chapters]
+    if trimmed:
+        range_start = 0.0 if start_s is None else start_s
+        range_end = total_seconds if end_s is None else end_s
+        pieces = plan_trim_pieces(block, range_start, range_end)
+        if on_stage:
+            on_stage("trim", 0.0, 1.0)
+        try:
+            sources = materialize_pieces(
+                pieces,
+                temp_dir,
+                (lambda c, t: on_stage("trim", c, t) if on_stage else None),
+            )
+        except Exception:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
+        if on_stage:
+            on_stage("trim", 1.0, 1.0)
+
+    def cleanup_temp() -> None:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
     merger = ensure_mp4_merge()
     if merger is not None:
-        if on_stage:
-            on_stage("join", 0.0, float(max(block.size_bytes, 1)))
-        run_mp4_merge(block, output_360, join_progress)
+        try:
+            if len(sources) == 1:
+                if on_stage:
+                    on_stage("join", 0.0, 1.0)
+                if output_360.exists():
+                    output_360.unlink()
+                shutil.copy2(sources[0], output_360)
+                if on_stage:
+                    on_stage("join", 1.0, 1.0)
+            else:
+                if on_stage:
+                    on_stage(
+                        "join",
+                        0.0,
+                        float(max(sum(p.stat().st_size for p in sources), 1)),
+                    )
+                run_mp4_merge(sources, output_360, join_progress)
+        finally:
+            cleanup_temp()
         if on_stage:
             on_stage("udtacopy", 1.0, 1.0)
             on_stage("rename", 1.0, 1.0)
@@ -349,12 +412,31 @@ def merge_block(
             filelist_path.unlink()
         return output_360
 
-    map_args = concat_map_args(block.first.path)
+    map_args = concat_map_args(sources[0])
     if on_stage:
         on_stage("join", 0.0, max(total_seconds, 0.001))
-    run_ffmpeg_concat(
-        filelist_path, output_mp4, total_seconds, map_args, join_progress
-    )
+    try:
+        if len(sources) == 1:
+            shutil.copy2(sources[0], output_mp4)
+        else:
+            trim_list = output_dir / f"filelist_{block.block_id}_crop.txt"
+            write_filelist(
+                Block(
+                    block_id=block.block_id,
+                    chapters=tuple(
+                        ChapterFile(path=p, chapter=i + 1, block_id=block.block_id)
+                        for i, p in enumerate(sources)
+                    ),
+                ),
+                trim_list,
+            )
+            run_ffmpeg_concat(
+                trim_list, output_mp4, total_seconds, map_args, join_progress
+            )
+            if not keep_filelist and trim_list.exists():
+                trim_list.unlink()
+    finally:
+        cleanup_temp()
 
     if on_stage:
         on_stage("udtacopy", 0.0, 1.0)

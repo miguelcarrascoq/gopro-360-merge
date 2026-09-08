@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 gopro-360-merge = "gopro_360_merge.cli:main"
+gopro-360-crop = "gopro_360_merge.cli:crop_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
