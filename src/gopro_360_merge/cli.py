@@ -497,6 +497,10 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "crop":
         return crop_main(argv[1:])
+    if argv and argv[0] == "gui":
+        from gopro_360_merge.gui import main as gui_main
+
+        return gui_main()
     return merge_main(argv)
 
 

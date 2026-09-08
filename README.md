@@ -1,6 +1,6 @@
 # gopro-360-merge
 
-Interactive CLI to merge **chaptered GoPro `.360` files** by recording block, following the [GoPro Labs chapter workflow](https://gopro.github.io/labs/control/chapters/).
+Interactive CLI and desktop GUI to merge **chaptered GoPro `.360` files** by recording block, following the [GoPro Labs chapter workflow](https://gopro.github.io/labs/control/chapters/).
 
 GoPro splits long recordings into `GS01…`, `GS02…`, … chapters. Files that share the same trailing recording ID belong to one block:
 
@@ -26,9 +26,29 @@ cd gopro-360-merge
 python3 -m pip install -e .
 ```
 
-Or use the run scripts below: they create `.venv`, install the package, and install `ffmpeg` if missing (Homebrew on macOS, winget on Windows).
+Or use the run / GUI scripts below: they create `.venv`, install the package, and install `ffmpeg` if missing (Homebrew on macOS, winget on Windows).
 
-## Usage
+## Desktop GUI
+
+Cross-platform UI (macOS / Windows / Linux) with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): pick a folder, select blocks, set optional start/end trim, and run **Merge** or **Crop**.
+
+```bash
+# macOS / Linux
+./gui.sh
+```
+
+```bat
+REM Windows
+gui.bat
+```
+
+```bash
+# After pip install -e .
+gopro-360-gui
+gopro-360-merge gui
+```
+
+## CLI Usage
 
 ```bash
 # macOS / Linux: bootstrap + ask/confirm folder, then merge UI
