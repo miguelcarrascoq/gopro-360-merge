@@ -12,7 +12,7 @@ GS011624.360  GS021624.360  …  GS051624.360   →  block 1624
 ## Requirements
 
 - Python 3.11+
-- [ffmpeg](https://ffmpeg.org/) (includes `ffprobe`) — e.g. `brew install ffmpeg`
+- [ffmpeg](https://ffmpeg.org/) (includes `ffprobe`) — e.g. `brew install ffmpeg` (macOS) or `winget install Gyan.FFmpeg` (Windows)
 - [`udtacopy`](https://gopro.github.io/labs/control/chapters/) — bundled with this package and extracted automatically on first use if not already on your `PATH`
 
 On macOS, Gatekeeper may block the first run of the bundled binary; use **System Settings → Privacy & Security → Open Anyway** if prompted.
@@ -25,23 +25,32 @@ cd gopro-360-merge
 python3 -m pip install -e .
 ```
 
-Or use `./run.sh` (below): it creates `.venv`, installs the package, and on macOS with Homebrew installs `ffmpeg` if missing.
+Or use the run scripts below: they create `.venv`, install the package, and install `ffmpeg` if missing (Homebrew on macOS, winget on Windows).
 
 ## Usage
 
 ```bash
-# Recommended: bootstrap + ask/confirm folder, then merge UI
+# macOS / Linux: bootstrap + ask/confirm folder, then merge UI
 ./run.sh
 ./run.sh /path/to/gopro/folder
 ./run.sh /path/to/gopro/folder --all -y
+```
 
+```bat
+REM Windows (CMD / Explorer): same flow via run.bat → run.ps1
+run.bat
+run.bat D:\path\to\gopro\folder
+run.bat D:\path\to\gopro\folder --all -y
+```
+
+```bash
 # Direct CLI (after pip install -e .)
 gopro-360-merge /path/to/gopro/folder
 gopro-360-merge /path/to/gopro/folder --all -y
 gopro-360-merge /path/to/gopro/folder -o /path/to/output
 ```
 
-`./run.sh` asks for the GoPro folder first (or shows the path you passed and only confirms), then runs the merge flow.
+The run scripts ask for the GoPro folder first (or show the path you passed and only confirm), then run the merge flow.
 
 For each selected block the tool:
 
