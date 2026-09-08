@@ -12,8 +12,9 @@ GS011624.360  GS021624.360  …  GS051624.360   →  block 1624
 ## Requirements
 
 - Python 3.11+
-- [ffmpeg](https://ffmpeg.org/) (includes `ffprobe`) — e.g. `brew install ffmpeg` (macOS) or `winget install Gyan.FFmpeg` (Windows)
-- [`udtacopy`](https://gopro.github.io/labs/control/chapters/) — bundled with this package and extracted automatically on first use if not already on your `PATH`
+- [ffmpeg](https://ffmpeg.org/) (includes `ffprobe`) — duration probing and ffmpeg concat fallback; e.g. `brew install ffmpeg` (macOS) or `winget install Gyan.FFmpeg` (Windows)
+- [`mp4-merge`](https://github.com/gyroflow/mp4-merge) — downloaded on first use (keeps GoPro Player–compatible `.360` structure)
+- [`udtacopy`](https://gopro.github.io/labs/control/chapters/) — bundled fallback if mp4-merge is unavailable
 
 On macOS, Gatekeeper may block the first run of the bundled binary; use **System Settings → Privacy & Security → Open Anyway** if prompted.
 
@@ -52,20 +53,9 @@ gopro-360-merge /path/to/gopro/folder -o /path/to/output
 
 The run scripts ask for the GoPro folder first (or show the path you passed and only confirm), then run the merge flow.
 
-For each selected block the tool:
+For each selected block the tool joins chapters with [mp4-merge](https://github.com/gyroflow/mp4-merge), which concatenates `mdat` and rewrites sample tables while keeping the camera’s tracks and `udta` metadata. That is what GoPro Player needs for a file larger than 4 GB. If mp4-merge is unavailable, it falls back to ffmpeg concat + `udtacopy`.
 
-1. Writes `filelist_<id>.txt` (ffmpeg concat demuxer)
-2. Runs ffmpeg concat with `-c copy`, mapping both fisheye video tracks plus AAC, GPMF, and ambisonic when present (stream indexes differ between MAX and MAX 2). The mux uses `-f mov -brand mp41 -write_tmcd 0` so GoPro Player still recognizes the file.
-
-3. Copies GoPro `udta` metadata:
-
-   ```bash
-   udtacopy GS01xxxx.360 final_<id>.mp4
-   ```
-
-4. Renames to `final_<id>.360`
-
-Outputs land in `<directory>/merged/` by default. Progress bars show per-block status (probe → ffmpeg → udtacopy → rename).
+Outputs land in `<directory>/merged/` by default.
 
 ## License
 

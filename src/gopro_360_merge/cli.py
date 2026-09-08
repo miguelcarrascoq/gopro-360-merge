@@ -120,7 +120,8 @@ def run_merges(blocks: list[Block], output_dir: Path) -> int:
             ) -> None:
                 labels = {
                     "probe": "probing duration",
-                    "ffmpeg": "ffmpeg concat",
+                    "join": "joining chapters",
+                    "ffmpeg": "joining chapters",
                     "udtacopy": "copying udta metadata",
                     "rename": "renaming to .360",
                 }
@@ -128,12 +129,14 @@ def run_merges(blocks: list[Block], output_dir: Path) -> int:
                 # Map stages onto a 0–100 overall bar for this block
                 stage_base = {
                     "probe": 0.0,
+                    "join": 5.0,
                     "ffmpeg": 5.0,
                     "udtacopy": 90.0,
                     "rename": 97.0,
                 }
                 stage_span = {
                     "probe": 5.0,
+                    "join": 85.0,
                     "ffmpeg": 85.0,
                     "udtacopy": 7.0,
                     "rename": 3.0,
