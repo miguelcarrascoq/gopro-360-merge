@@ -66,8 +66,8 @@ class App(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("gopro-360-merge")
-        self.geometry("780x720")
-        self.minsize(640, 560)
+        self.geometry("760x420")
+        self.minsize(640, 360)
         self._icon_images: list[tk.PhotoImage] = []
         self._apply_app_icon()
 
@@ -81,6 +81,7 @@ class App(ctk.CTk):
         self._event_queue: queue.Queue[tuple] = queue.Queue()
 
         self._build_ui()
+        self.after_idle(self._fit_window)
         self.after(100, self._poll_events)
 
     def _apply_app_icon(self) -> None:
@@ -95,128 +96,141 @@ class App(ctk.CTk):
         except Exception:  # noqa: BLE001 — icon must never block startup
             pass
 
+    def _section(self, row: int, *, pady: tuple[int, int] = (0, 6)) -> ctk.CTkFrame:
+        """Content-sized card (CTkFrame defaults to height=200 — override)."""
+        frame = ctk.CTkFrame(self, height=1)
+        frame.grid(row=row, column=0, sticky="ew", padx=12, pady=pady)
+        frame.grid_columnconfigure(0, weight=1)
+        return frame
+
+    def _fit_window(self) -> None:
+        """Shrink/grow window height to the laid-out content."""
+        self.update_idletasks()
+        req_h = max(self.winfo_reqheight(), 360)
+        height = min(max(req_h + 8, 360), 900)
+        width = max(self.winfo_width(), 760) if self.winfo_width() > 100 else 760
+        self.geometry(f"{width}x{height}")
+
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(4, weight=1)
 
-        # Source folder
-        folder_frame = ctk.CTkFrame(self)
-        folder_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 6))
-        folder_frame.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(folder_frame, text="Carpeta GS*.360 *").grid(
-            row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(8, 4)
+        # --- Folder ---
+        folder = self._section(0, pady=(12, 6))
+        folder.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(folder, text="Carpeta GS*.360 *").grid(
+            row=0, column=0, columnspan=4, sticky="w", padx=8, pady=(6, 2)
         )
         self.folder_var = ctk.StringVar(value="")
-        self.folder_entry = ctk.CTkEntry(folder_frame, textvariable=self.folder_var)
-        self.folder_entry.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(12, 8), pady=(0, 10))
+        self.folder_entry = ctk.CTkEntry(
+            folder, textvariable=self.folder_var, height=28
+        )
+        self.folder_entry.grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=(8, 6), pady=(0, 8)
+        )
         ctk.CTkButton(
-            folder_frame,
-            text="Elegir carpeta…",
-            width=140,
+            folder,
+            text="Elegir…",
+            width=88,
+            height=28,
             command=self._pick_folder,
-        ).grid(row=1, column=2, padx=(0, 8), pady=(0, 10))
+        ).grid(row=1, column=2, padx=(0, 4), pady=(0, 8))
         ctk.CTkButton(
-            folder_frame,
+            folder,
             text="Escanear",
-            width=100,
+            width=88,
+            height=28,
             command=self._scan_folder,
-        ).grid(row=1, column=3, padx=(0, 12), pady=(0, 10))
+        ).grid(row=1, column=3, padx=(0, 8), pady=(0, 8))
 
-        # Blocks (content-sized, no scroll viewport)
-        blocks_outer = ctk.CTkFrame(self)
-        blocks_outer.grid(row=1, column=0, sticky="ew", padx=16, pady=6)
-        blocks_outer.grid_columnconfigure(0, weight=1)
-
-        blocks_header = ctk.CTkFrame(blocks_outer, fg_color="transparent")
-        blocks_header.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
+        # --- Blocks ---
+        blocks_outer = self._section(1, pady=(0, 6))
+        blocks_header = ctk.CTkFrame(blocks_outer, fg_color="transparent", height=1)
+        blocks_header.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 2))
         blocks_header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             blocks_header,
             text="Bloques / capítulos *",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
             blocks_header,
-            text="Seleccionar todos",
-            width=140,
+            text="Todos",
+            width=64,
+            height=26,
             command=self._select_all,
-        ).grid(row=0, column=1, padx=4)
+        ).grid(row=0, column=1, padx=(4, 2))
         ctk.CTkButton(
             blocks_header,
             text="Ninguno",
-            width=90,
+            width=72,
+            height=26,
             command=self._select_none,
-        ).grid(row=0, column=2, padx=(4, 0))
+        ).grid(row=0, column=2, padx=(2, 0))
 
-        self.blocks_list = ctk.CTkFrame(blocks_outer, fg_color="transparent")
-        self.blocks_list.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        self.blocks_list = ctk.CTkFrame(
+            blocks_outer, fg_color="transparent", height=1
+        )
+        self.blocks_list.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
         self.blocks_list.grid_columnconfigure(0, weight=1)
         self._blocks_placeholder = ctk.CTkLabel(
             self.blocks_list,
-            text="Elige una carpeta y pulsa Escanear.",
+            text="Sin bloques — elige carpeta y escanea.",
             text_color="gray60",
+            font=ctk.CTkFont(size=12),
         )
-        self._blocks_placeholder.grid(row=0, column=0, sticky="w", padx=2, pady=4)
+        self._blocks_placeholder.grid(row=0, column=0, sticky="w", padx=2, pady=2)
 
-        # Output
-        opts = ctk.CTkFrame(self)
-        opts.grid(row=2, column=0, sticky="ew", padx=16, pady=6)
+        # --- Output + run ---
+        opts = self._section(2, pady=(0, 6))
         opts.grid_columnconfigure(1, weight=1)
-
         ctk.CTkLabel(opts, text="Salida *").grid(
-            row=0, column=0, sticky="w", padx=12, pady=(8, 4)
+            row=0, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 2)
         )
         self.output_var = ctk.StringVar(value="")
-        ctk.CTkEntry(opts, textvariable=self.output_var).grid(
-            row=1, column=0, columnspan=2, sticky="ew", padx=(12, 8), pady=(0, 6)
+        ctk.CTkEntry(opts, textvariable=self.output_var, height=28).grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=(8, 6), pady=(0, 4)
         )
         ctk.CTkButton(
             opts,
             text="…",
-            width=40,
+            width=36,
+            height=28,
             command=self._pick_output,
-        ).grid(row=1, column=2, padx=(0, 12), pady=(0, 6))
+        ).grid(row=1, column=2, padx=(0, 8), pady=(0, 4))
 
         self.duration_label = ctk.CTkLabel(
             opts,
             text="Duración: —",
             text_color="gray70",
+            font=ctk.CTkFont(size=12),
         )
         self.duration_label.grid(
-            row=2, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8)
+            row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 4)
         )
-
-        # Actions
-        actions = ctk.CTkFrame(self, fg_color="transparent")
-        actions.grid(row=3, column=0, sticky="ew", padx=16, pady=4)
-        actions.grid_columnconfigure(0, weight=1)
         self.run_button = ctk.CTkButton(
-            actions,
+            opts,
             text="Ejecutar merge",
-            height=36,
+            height=32,
             command=self._run,
         )
-        self.run_button.grid(row=0, column=0, sticky="ew")
+        self.run_button.grid(
+            row=3, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8)
+        )
 
-        # Progress + log (takes remaining vertical space)
-        bottom = ctk.CTkFrame(self)
-        bottom.grid(row=4, column=0, sticky="nsew", padx=16, pady=(6, 16))
-        bottom.grid_columnconfigure(0, weight=1)
-        bottom.grid_rowconfigure(2, weight=1)
-
+        # --- Status + progress + log ---
+        bottom = self._section(3, pady=(0, 12))
         self.status_label = ctk.CTkLabel(
             bottom,
             text="Elige una carpeta y pulsa Escanear.",
             anchor="w",
+            font=ctk.CTkFont(size=12),
         )
-        self.status_label.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
-        self.progress = ctk.CTkProgressBar(bottom)
-        self.progress.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
+        self.status_label.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 2))
+        self.progress = ctk.CTkProgressBar(bottom, height=8)
+        self.progress.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 4))
         self.progress.set(0)
-
-        self.log_box = ctk.CTkTextbox(bottom, height=140)
-        self.log_box.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self.log_box = ctk.CTkTextbox(bottom, height=68)
+        self.log_box.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 8))
         self.log_box.configure(state="disabled")
 
     def _set_status(self, text: str) -> None:
@@ -231,7 +245,9 @@ class App(ctk.CTk):
             if not folder:
                 self._set_status("Elige una carpeta y pulsa Escanear.")
             else:
-                self._set_status("Sin bloques detectados. Elige otra carpeta o vuelve a escanear.")
+                self._set_status(
+                    "Sin bloques detectados. Elige otra carpeta o vuelve a escanear."
+                )
             return
         selected = self._selected_blocks()
         if not selected:
@@ -305,10 +321,12 @@ class App(ctk.CTk):
                 self.blocks_list,
                 text=f"No se encontraron GS*.360 en {source}",
                 text_color="orange",
-            ).grid(row=0, column=0, sticky="w", padx=2, pady=4)
+                font=ctk.CTkFont(size=12),
+            ).grid(row=0, column=0, sticky="w", padx=2, pady=2)
             self.duration_label.configure(text="Duración: —")
             self._log(f"Sin bloques en {source}")
             self._refresh_idle_status()
+            self.after_idle(self._fit_window)
             return
 
         for i, block in enumerate(blocks):
@@ -325,10 +343,11 @@ class App(ctk.CTk):
                 variable=var,
                 command=self._on_selection_change,
             )
-            cb.grid(row=i, column=0, sticky="ew", padx=2, pady=2)
+            cb.grid(row=i, column=0, sticky="ew", padx=2, pady=1)
 
         self._log(f"Detectados {len(blocks)} bloque(s) en {source}")
         self._on_selection_change()
+        self.after_idle(self._fit_window)
 
     def _select_all(self) -> None:
         for var in self._block_vars.values():
@@ -483,9 +502,7 @@ class App(ctk.CTk):
                     self._set_busy(False)
                     if failures:
                         self.progress.set(1.0)
-                        self._set_status(
-                            f"Terminado con {failures} error(es)."
-                        )
+                        self._set_status(f"Terminado con {failures} error(es).")
                         self._log(f"Finalizado con {failures}/{total} fallos.")
                         messagebox.showwarning(
                             "Resultado",
@@ -493,9 +510,7 @@ class App(ctk.CTk):
                         )
                     else:
                         self.progress.set(1.0)
-                        self._set_status(
-                            f"Merge completado ({total} bloque(s))."
-                        )
+                        self._set_status(f"Merge completado ({total} bloque(s)).")
                         self._log("Todos los bloques procesados correctamente.")
                         messagebox.showinfo(
                             "Resultado",
