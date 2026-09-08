@@ -13,8 +13,12 @@ from pathlib import Path
 import customtkinter as ctk
 
 from gopro_360_merge.detect import Block, scan_directory
-from gopro_360_merge.merge import estimate_block_duration, merge_block, require_tools
-from gopro_360_merge.trim import format_timecode, parse_timecode
+from gopro_360_merge.merge import (
+    estimate_block_duration,
+    format_timecode,
+    merge_block,
+    require_tools,
+)
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 APP_ICON_PNG = ASSETS_DIR / "app_icon.png"
@@ -22,7 +26,6 @@ APP_ICON_ICO = ASSETS_DIR / "app_icon.ico"
 
 STAGE_LABELS_ES = {
     "probe": "Calculando duración",
-    "trim": "Recortando capítulos",
     "join": "Uniendo capítulos",
     "ffmpeg": "Uniendo capítulos",
     "udtacopy": "Copiando metadatos udta",
@@ -38,34 +41,19 @@ def format_size(num_bytes: int) -> str:
     return f"{mb:.1f} MB"
 
 
-def parse_optional_timecode(value: str, *, empty: float | None) -> float | None:
-    stripped = value.strip()
-    if not stripped:
-        return empty
-    return parse_timecode(stripped)
-
-
-def stage_progress(
-    stage: str,
-    current: float,
-    total: float,
-    *,
-    has_trim: bool,
-) -> tuple[float, str]:
+def stage_progress(stage: str, current: float, total: float) -> tuple[float, str]:
     labels = STAGE_LABELS_ES
     stage_base = {
         "probe": 0.0,
-        "trim": 5.0,
-        "join": 40.0 if has_trim else 5.0,
-        "ffmpeg": 40.0 if has_trim else 5.0,
+        "join": 5.0,
+        "ffmpeg": 5.0,
         "udtacopy": 90.0,
         "rename": 97.0,
     }
     stage_span = {
         "probe": 5.0,
-        "trim": 35.0,
-        "join": 50.0 if has_trim else 85.0,
-        "ffmpeg": 50.0 if has_trim else 85.0,
+        "join": 85.0,
+        "ffmpeg": 85.0,
         "udtacopy": 7.0,
         "rename": 3.0,
     }
@@ -171,7 +159,7 @@ class App(ctk.CTk):
         )
         self._blocks_placeholder.grid(row=0, column=0, sticky="w", padx=2, pady=4)
 
-        # Output + trim
+        # Output
         opts = ctk.CTkFrame(self)
         opts.grid(row=2, column=0, sticky="ew", padx=16, pady=6)
         opts.grid_columnconfigure(1, weight=1)
@@ -190,37 +178,14 @@ class App(ctk.CTk):
             command=self._pick_output,
         ).grid(row=1, column=2, padx=(0, 12), pady=(0, 6))
 
-        ctk.CTkLabel(opts, text="Inicio (hh:mm:ss) · opcional").grid(
-            row=2, column=0, sticky="w", padx=12, pady=(2, 0)
-        )
-        ctk.CTkLabel(opts, text="Fin (hh:mm:ss) · opcional").grid(
-            row=2, column=1, sticky="w", padx=12, pady=(2, 0)
-        )
-        self.start_var = ctk.StringVar(value="")
-        self.end_var = ctk.StringVar(value="")
-        ctk.CTkEntry(opts, textvariable=self.start_var, placeholder_text="vacío = 0").grid(
-            row=3, column=0, sticky="ew", padx=(12, 8), pady=(0, 6)
-        )
-        ctk.CTkEntry(
-            opts,
-            textvariable=self.end_var,
-            placeholder_text="vacío = duración total",
-        ).grid(row=3, column=1, sticky="ew", padx=(12, 8), pady=(0, 6))
-
         self.duration_label = ctk.CTkLabel(
             opts,
             text="Duración: —",
             text_color="gray70",
         )
         self.duration_label.grid(
-            row=4, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 4)
+            row=2, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8)
         )
-        ctk.CTkLabel(
-            opts,
-            text="Deja vacío para la grabación completa. Recorte ±1 s (keyframes).",
-            text_color="gray60",
-            font=ctk.CTkFont(size=12),
-        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8))
 
         # Actions
         actions = ctk.CTkFrame(self, fg_color="transparent")
@@ -383,43 +348,6 @@ class App(ctk.CTk):
                 parts.append(f"#{block.block_id}: {format_timecode(total)}")
         self.duration_label.configure(text="Duración: " + "  |  ".join(parts))
 
-    def _resolve_ranges(
-        self,
-        selected: list[Block],
-    ) -> dict[str, tuple[float | None, float | None]] | None:
-        start_raw = self.start_var.get()
-        end_raw = self.end_var.get()
-        try:
-            shared_start = parse_optional_timecode(start_raw, empty=None)
-            shared_end = parse_optional_timecode(end_raw, empty=None)
-        except ValueError as exc:
-            messagebox.showerror("Tiempo inválido", str(exc))
-            return None
-
-        if shared_start is None and shared_end is None:
-            return {b.block_id: (None, None) for b in selected}
-
-        start_s = 0.0 if shared_start is None else shared_start
-        ranges: dict[str, tuple[float | None, float | None]] = {}
-        for block in selected:
-            total = self._durations.get(block.block_id)
-            if total is None:
-                messagebox.showwarning(
-                    "Duración",
-                    f"Aún se está calculando la duración del bloque {block.block_id}.",
-                )
-                return None
-            end_s = total if shared_end is None else shared_end
-            if start_s < 0 or end_s > total + 0.5 or end_s <= start_s:
-                messagebox.showerror(
-                    "Rango",
-                    f"Bloque {block.block_id}: debe cumplir "
-                    f"0 ≤ inicio < fin ≤ {format_timecode(total)}.",
-                )
-                return None
-            ranges[block.block_id] = (start_s, min(end_s, total))
-        return ranges
-
     def _run(self) -> None:
         if self._busy:
             return
@@ -435,10 +363,6 @@ class App(ctk.CTk):
             return
         output_dir = Path(out_raw).expanduser().resolve()
 
-        ranges = self._resolve_ranges(selected)
-        if ranges is None:
-            return
-
         missing = require_tools()
         if missing:
             messagebox.showerror(
@@ -450,13 +374,7 @@ class App(ctk.CTk):
 
         summary_lines = [f"Se va a merge {len(selected)} bloque(s) → {output_dir}"]
         for block in selected:
-            start_s, end_s = ranges[block.block_id]
-            if start_s is None and end_s is None:
-                summary_lines.append(f"  • {block.block_id}: completo")
-            else:
-                start_label = format_timecode(start_s or 0.0)
-                end_label = format_timecode(end_s) if end_s is not None else "fin"
-                summary_lines.append(f"  • {block.block_id}: {start_label} → {end_label}")
+            summary_lines.append(f"  • {block.block_id}")
 
         if not messagebox.askokcancel("Confirmar", "\n".join(summary_lines)):
             return
@@ -470,8 +388,6 @@ class App(ctk.CTk):
         def worker() -> None:
             failures = 0
             for index, block in enumerate(selected):
-                start_s, end_s = ranges[block.block_id]
-                has_trim = start_s is not None or end_s is not None
                 self._event_queue.put(
                     ("status", f"Bloque {block.block_id} ({index + 1}/{len(selected)})…")
                 )
@@ -481,25 +397,16 @@ class App(ctk.CTk):
                     current: float,
                     total: float,
                     *,
-                    _has_trim: bool = has_trim,
                     _block_id: str = block.block_id,
                 ) -> None:
-                    pct, label = stage_progress(
-                        stage, current, total, has_trim=_has_trim
-                    )
+                    pct, label = stage_progress(stage, current, total)
                     overall = (index + pct / 100.0) / len(selected)
                     self._event_queue.put(
                         ("progress", overall, f"#{_block_id}: {label}")
                     )
 
                 try:
-                    out = merge_block(
-                        block,
-                        output_dir,
-                        on_stage=on_stage,
-                        start_s=start_s,
-                        end_s=end_s,
-                    )
+                    out = merge_block(block, output_dir, on_stage=on_stage)
                     self._event_queue.put(
                         ("log", f"✓ Bloque {block.block_id} → {out}")
                     )

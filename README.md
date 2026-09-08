@@ -30,7 +30,7 @@ Or use the run / GUI scripts below: they create `.venv`, install the package, an
 
 ## Desktop GUI
 
-Cross-platform UI (macOS / Windows / Linux) with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): pick a folder, select blocks, set optional start/end trim, and run **Merge**.
+Cross-platform UI (macOS / Windows / Linux) with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): pick a folder, select blocks, and run **Merge**.
 
 ```bash
 # macOS / Linux
@@ -95,15 +95,11 @@ gopro-360-merge /path/to/gopro/folder -o /path/to/output
 
 The run scripts ask for the GoPro folder first (or show the path you passed and only confirm), then run the merge flow.
 
-After selecting block(s), the CLI probes chapter durations and shows each **total length** (no need to wait for the merge). Interactively it asks start/end **per block**; `--start` / `--end` apply the same range to every selected block. Leave times empty for a full merge of that block.
+After selecting block(s), the CLI probes chapter durations and shows each **total length** (no need to wait for the merge).
 
 For each selected block the tool joins chapters with [mp4-merge](https://github.com/gyroflow/mp4-merge), which concatenates `mdat` and rewrites sample tables while keeping the camera’s tracks and `udta` metadata. That is what GoPro Player needs for a file larger than 4 GB. If mp4-merge is unavailable, it falls back to ffmpeg concat + `udtacopy`.
 
-Outputs land in `<directory>/merged/` by default (`final_<id>.360`). With
-`--start` / `--end` (or interactive times), mid-range cuts remux from the
-original `GS*.360` chapters (keyframe-aligned, about ±1 s) and write
-`final_<id>_crop.360` — do not ffmpeg-trim a finished multi‑GB `.360` if you
-need GoPro Player compatibility.
+Outputs land in `<directory>/merged/` by default (`final_<id>.360`).
 
 ## License
 

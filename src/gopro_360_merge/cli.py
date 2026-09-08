@@ -22,8 +22,12 @@ from rich.table import Table
 
 from gopro_360_merge import __version__
 from gopro_360_merge.detect import Block, scan_directory
-from gopro_360_merge.merge import estimate_block_duration, merge_block, require_tools
-from gopro_360_merge.trim import format_timecode, parse_timecode
+from gopro_360_merge.merge import (
+    estimate_block_duration,
+    format_timecode,
+    merge_block,
+    require_tools,
+)
 from gopro_360_merge.udtacopy_tool import resolve_udtacopy
 
 console = Console()
@@ -52,50 +56,6 @@ def print_blocks_table(blocks: list[Block]) -> None:
             files,
         )
     console.print(table)
-
-
-def parse_optional_timecode(value: str | None, *, empty: float | None) -> float | None:
-    if value is None:
-        return empty
-    stripped = value.strip()
-    if not stripped:
-        return empty
-    return parse_timecode(stripped)
-
-
-def prompt_time_range(
-    total: float,
-    *,
-    label: str | None = None,
-) -> tuple[float, float] | None:
-    if label:
-        console.print(f"\n[bold cyan]{label}[/bold cyan]")
-    console.print(f"Total duration: [bold]{format_timecode(total)}[/bold]")
-    console.print(
-        "[dim]Keyframe-aligned copy trim (about ±1s). "
-        "Empty start = 0, empty end = total.[/dim]"
-    )
-    start_raw = questionary.text("Start (hh:mm:ss):", default="").ask()
-    if start_raw is None:
-        return None
-    end_raw = questionary.text(
-        f"End (hh:mm:ss, empty = {format_timecode(total)}):",
-        default="",
-    ).ask()
-    if end_raw is None:
-        return None
-    try:
-        start = parse_optional_timecode(start_raw, empty=0.0) or 0.0
-        end = parse_optional_timecode(end_raw, empty=total)
-        if end is None:
-            end = total
-    except ValueError as exc:
-        console.print(f"[red]Invalid time: {exc}[/red]")
-        return None
-    if start < 0 or end > total + 0.5 or end <= start:
-        console.print("[red]Start/end must satisfy 0 ≤ start < end ≤ total.[/red]")
-        return None
-    return start, min(end, total)
 
 
 def select_blocks(blocks: list[Block]) -> list[Block]:
@@ -131,13 +91,7 @@ def check_dependencies() -> bool:
     return False
 
 
-def run_merges(
-    blocks: list[Block],
-    output_dir: Path,
-    *,
-    ranges: dict[str, tuple[float | None, float | None]] | None = None,
-) -> int:
-    ranges = ranges or {}
+def run_merges(blocks: list[Block], output_dir: Path) -> int:
     failures = 0
     with Progress(
         SpinnerColumn(),
@@ -155,7 +109,6 @@ def run_merges(
             block_id="ALL",
         )
         for block in blocks:
-            start_s, end_s = ranges.get(block.block_id, (None, None))
             task = progress.add_task(
                 "starting…",
                 total=100.0,
@@ -168,14 +121,9 @@ def run_merges(
                 total: float,
                 *,
                 _task: TaskID = task,
-                _block: Block = block,
-                _start_s: float | None = start_s,
-                _end_s: float | None = end_s,
             ) -> None:
-                has_trim = _start_s is not None or _end_s is not None
                 labels = {
                     "probe": "probing duration",
-                    "trim": "trimming chapters",
                     "join": "joining chapters",
                     "ffmpeg": "joining chapters",
                     "udtacopy": "copying udta metadata",
@@ -184,17 +132,15 @@ def run_merges(
                 label = labels.get(stage, stage)
                 stage_base = {
                     "probe": 0.0,
-                    "trim": 5.0,
-                    "join": 40.0 if has_trim else 5.0,
-                    "ffmpeg": 40.0 if has_trim else 5.0,
+                    "join": 5.0,
+                    "ffmpeg": 5.0,
                     "udtacopy": 90.0,
                     "rename": 97.0,
                 }
                 stage_span = {
                     "probe": 5.0,
-                    "trim": 35.0,
-                    "join": 50.0 if has_trim else 85.0,
-                    "ffmpeg": 50.0 if has_trim else 85.0,
+                    "join": 85.0,
+                    "ffmpeg": 85.0,
                     "udtacopy": 7.0,
                     "rename": 3.0,
                 }
@@ -203,13 +149,7 @@ def run_merges(
                 progress.update(_task, completed=completed, description=label)
 
             try:
-                out = merge_block(
-                    block,
-                    output_dir,
-                    on_stage=on_stage,
-                    start_s=start_s,
-                    end_s=end_s,
-                )
+                out = merge_block(block, output_dir, on_stage=on_stage)
                 progress.update(task, completed=100.0, description=f"done → {out.name}")
                 console.print(
                     f"[green]✓[/green] Block {block.block_id} → {out}"
@@ -238,16 +178,6 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Output directory (default: <directory>/merged)",
     )
     parser.add_argument(
-        "--start",
-        default=None,
-        help="Start time (hh:mm:ss, mm:ss, or seconds). Default: 0",
-    )
-    parser.add_argument(
-        "--end",
-        default=None,
-        help="End time (hh:mm:ss, mm:ss, or seconds). Default: full duration",
-    )
-    parser.add_argument(
         "--all",
         action="store_true",
         help="Use all detected blocks without interactive selection",
@@ -265,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="gopro-360-merge",
         description=(
             "Detect chaptered GoPro .360 files, select recording blocks, "
-            "and merge them. Optional --start/--end trim the selected blocks."
+            "and merge them."
         ),
     )
     _add_common_args(parser)
@@ -289,70 +219,23 @@ def _load_blocks(source: Path) -> list[Block] | int:
     return blocks
 
 
-def _resolve_range(
-    selected: list[Block],
-    *,
-    start_arg: str | None,
-    end_arg: str | None,
-    interactive: bool,
-) -> dict[str, tuple[float | None, float | None]] | None:
-    totals = [estimate_block_duration(b) for b in selected]
-    for block, total in zip(selected, totals, strict=True):
-        console.print(
-            f"  • {block.block_id}: {len(block.chapters)} chapters, "
-            f"{format_timecode(total)}"
-        )
-
-    try:
-        shared_start = parse_optional_timecode(start_arg, empty=None)
-        shared_end = parse_optional_timecode(end_arg, empty=None)
-    except ValueError as exc:
-        console.print(f"[red]Invalid --start/--end: {exc}[/red]")
-        return None
-
-    ranges: dict[str, tuple[float | None, float | None]] = {}
-
-    if shared_start is None and shared_end is None and interactive:
-        for block, total in zip(selected, totals, strict=True):
-            prompted = prompt_time_range(total, label=f"Block {block.block_id}")
-            if prompted is None:
-                return None
-            start_s, end_s = prompted
-            if start_s <= 0.05 and abs(end_s - total) < 0.5:
-                ranges[block.block_id] = (None, None)
-            else:
-                ranges[block.block_id] = (start_s, end_s)
-        return ranges
-
-    if shared_start is None and shared_end is None:
-        return {block.block_id: (None, None) for block in selected}
-
-    start_s = 0.0 if shared_start is None else shared_start
-    for block, total in zip(selected, totals, strict=True):
-        end_s = total if shared_end is None else shared_end
-        ranges[block.block_id] = (start_s, end_s)
-    return ranges
-
-
 def _run_selected(
     selected: list[Block],
     output_dir: Path,
     *,
-    ranges: dict[str, tuple[float | None, float | None]],
     yes: bool,
 ) -> int:
+    console.print()
+    for block in selected:
+        total = estimate_block_duration(block)
+        console.print(
+            f"  • {block.block_id}: {len(block.chapters)} chapters, "
+            f"{format_timecode(total)}"
+        )
     console.print()
     console.print(
         f"Will merge [bold]{len(selected)}[/bold] block(s) into {output_dir}"
     )
-    for block in selected:
-        start_s, end_s = ranges.get(block.block_id, (None, None))
-        if start_s is None and end_s is None:
-            console.print(f"  • {block.block_id}: full")
-            continue
-        start_label = format_timecode(start_s or 0.0)
-        end_label = format_timecode(end_s) if end_s is not None else "end"
-        console.print(f"  • {block.block_id}: {start_label} → {end_label}")
 
     if not yes:
         confirmed = questionary.confirm("Proceed with merge?", default=True).ask()
@@ -361,7 +244,7 @@ def _run_selected(
             return 0
 
     console.print()
-    failures = run_merges(selected, output_dir, ranges=ranges)
+    failures = run_merges(selected, output_dir)
     if failures:
         console.print(f"\n[red]Finished with {failures} failure(s).[/red]")
         return 1
@@ -398,22 +281,7 @@ def merge_main(argv: list[str]) -> int:
         console.print("[yellow]No blocks selected. Exiting.[/yellow]")
         return 0
 
-    console.print()
-    resolved = _resolve_range(
-        selected,
-        start_arg=args.start,
-        end_arg=args.end,
-        interactive=not args.yes,
-    )
-    if resolved is None:
-        console.print("[yellow]Cancelled.[/yellow]")
-        return 0
-    return _run_selected(
-        selected,
-        output_dir,
-        ranges=resolved,
-        yes=args.yes,
-    )
+    return _run_selected(selected, output_dir, yes=args.yes)
 
 
 def main(argv: list[str] | None = None) -> int:
