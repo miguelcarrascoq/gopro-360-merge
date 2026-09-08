@@ -53,7 +53,7 @@ gopro-360-merge /path/to/gopro/folder -o /path/to/output
 
 The run scripts ask for the GoPro folder first (or show the path you passed and only confirm), then run the merge flow.
 
-After selecting a block, the CLI probes chapter durations and shows the **total length** (no need to wait for the merge). You can set `--start` / `--end` or leave them empty for the full recording.
+After selecting block(s), the CLI probes chapter durations and shows each **total length** (no need to wait for the merge). Interactively it asks start/end **per block**; `--start` / `--end` apply the same range to every selected block. Leave times empty for a full merge of that block.
 
 For each selected block the tool joins chapters with [mp4-merge](https://github.com/gyroflow/mp4-merge), which concatenates `mdat` and rewrites sample tables while keeping the camera’s tracks and `udta` metadata. That is what GoPro Player needs for a file larger than 4 GB. If mp4-merge is unavailable, it falls back to ffmpeg concat + `udtacopy`.
 
@@ -84,7 +84,7 @@ normalizes timestamps, then joins with mp4-merge and copies GoPro `udta` from
 the camera original (needed for 360 pan in Player). Stream-copy trim is
 keyframe-aligned (about ±1 s). Output is `merged/final_<id>_crop.360`.
 
-`--start` / `--end` also work on the merge command if you already know the times.
+`--start` / `--end` also work on the merge command if you already know the times (same range for every selected block).
 
 ## License
 

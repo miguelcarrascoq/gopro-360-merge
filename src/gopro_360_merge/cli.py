@@ -63,7 +63,13 @@ def parse_optional_timecode(value: str | None, *, empty: float | None) -> float 
     return parse_timecode(stripped)
 
 
-def prompt_time_range(total: float) -> tuple[float, float] | None:
+def prompt_time_range(
+    total: float,
+    *,
+    label: str | None = None,
+) -> tuple[float, float] | None:
+    if label:
+        console.print(f"\n[bold cyan]{label}[/bold cyan]")
     console.print(f"Total duration: [bold]{format_timecode(total)}[/bold]")
     console.print(
         "[dim]Keyframe-aligned copy trim (about ±1s). "
@@ -129,9 +135,9 @@ def run_merges(
     blocks: list[Block],
     output_dir: Path,
     *,
-    start_s: float | None = None,
-    end_s: float | None = None,
+    ranges: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> int:
+    ranges = ranges or {}
     failures = 0
     with Progress(
         SpinnerColumn(),
@@ -149,6 +155,7 @@ def run_merges(
             block_id="ALL",
         )
         for block in blocks:
+            start_s, end_s = ranges.get(block.block_id, (None, None))
             task = progress.add_task(
                 "starting…",
                 total=100.0,
@@ -162,8 +169,10 @@ def run_merges(
                 *,
                 _task: TaskID = task,
                 _block: Block = block,
+                _start_s: float | None = start_s,
+                _end_s: float | None = end_s,
             ) -> None:
-                has_trim = start_s is not None or end_s is not None
+                has_trim = _start_s is not None or _end_s is not None
                 labels = {
                     "probe": "probing duration",
                     "trim": "trimming chapters",
@@ -287,51 +296,60 @@ def _resolve_range(
     end_arg: str | None,
     interactive: bool,
     require_crop: bool,
-) -> tuple[float | None, float | None] | None:
+) -> dict[str, tuple[float | None, float | None]] | None:
     totals = [estimate_block_duration(b) for b in selected]
-    max_total = max(totals) if totals else 0.0
     for block, total in zip(selected, totals, strict=True):
         console.print(
             f"  • {block.block_id}: {len(block.chapters)} chapters, "
             f"{format_timecode(total)}"
         )
 
-    start_s: float | None
-    end_s: float | None
     try:
-        start_s = parse_optional_timecode(start_arg, empty=None)
-        end_s = parse_optional_timecode(end_arg, empty=None)
+        shared_start = parse_optional_timecode(start_arg, empty=None)
+        shared_end = parse_optional_timecode(end_arg, empty=None)
     except ValueError as exc:
         console.print(f"[red]Invalid --start/--end: {exc}[/red]")
         return None
 
-    if start_s is None and end_s is None and interactive:
-        prompted = prompt_time_range(max_total if len(selected) == 1 else totals[0])
-        if prompted is None:
-            return None
-        start_s, end_s = prompted
-        if not require_crop and start_s <= 0.05 and abs(end_s - totals[0]) < 0.5:
-            return (None, None)
+    ranges: dict[str, tuple[float | None, float | None]] = {}
 
-    if start_s is None and end_s is None:
+    if shared_start is None and shared_end is None and interactive:
+        for block, total in zip(selected, totals, strict=True):
+            prompted = prompt_time_range(total, label=f"Block {block.block_id}")
+            if prompted is None:
+                return None
+            start_s, end_s = prompted
+            if not require_crop and start_s <= 0.05 and abs(end_s - total) < 0.5:
+                ranges[block.block_id] = (None, None)
+            else:
+                ranges[block.block_id] = (start_s, end_s)
+        if require_crop and all(s is None and e is None for s, e in ranges.values()):
+            console.print(
+                "[red]crop needs --start and/or --end, or an interactive range.[/red]"
+            )
+            return None
+        return ranges
+
+    if shared_start is None and shared_end is None:
         if require_crop:
-            console.print("[red]crop needs --start and/or --end, or an interactive range.[/red]")
+            console.print(
+                "[red]crop needs --start and/or --end, or an interactive range.[/red]"
+            )
             return None
-        return (None, None)
+        return {block.block_id: (None, None) for block in selected}
 
-    if start_s is None:
-        start_s = 0.0
-    if end_s is None:
-        end_s = totals[0] if len(selected) == 1 else max_total
-    return (start_s, end_s)
+    start_s = 0.0 if shared_start is None else shared_start
+    for block, total in zip(selected, totals, strict=True):
+        end_s = total if shared_end is None else shared_end
+        ranges[block.block_id] = (start_s, end_s)
+    return ranges
 
 
 def _run_selected(
     selected: list[Block],
     output_dir: Path,
     *,
-    start_s: float | None,
-    end_s: float | None,
+    ranges: dict[str, tuple[float | None, float | None]],
     yes: bool,
     verb: str,
 ) -> int:
@@ -339,10 +357,14 @@ def _run_selected(
     console.print(
         f"Will {verb} [bold]{len(selected)}[/bold] block(s) into {output_dir}"
     )
-    if start_s is not None or end_s is not None:
+    for block in selected:
+        start_s, end_s = ranges.get(block.block_id, (None, None))
+        if start_s is None and end_s is None:
+            console.print(f"  • {block.block_id}: full")
+            continue
         start_label = format_timecode(start_s or 0.0)
         end_label = format_timecode(end_s) if end_s is not None else "end"
-        console.print(f"  Range: {start_label} → {end_label}")
+        console.print(f"  • {block.block_id}: {start_label} → {end_label}")
 
     if not yes:
         confirmed = questionary.confirm(f"Proceed with {verb}?", default=True).ask()
@@ -351,7 +373,7 @@ def _run_selected(
             return 0
 
     console.print()
-    failures = run_merges(selected, output_dir, start_s=start_s, end_s=end_s)
+    failures = run_merges(selected, output_dir, ranges=ranges)
     if failures:
         console.print(f"\n[red]Finished with {failures} failure(s).[/red]")
         return 1
@@ -400,12 +422,10 @@ def merge_main(argv: list[str]) -> int:
     if resolved is None:
         console.print("[yellow]Cancelled.[/yellow]")
         return 0
-    start_s, end_s = resolved
     return _run_selected(
         selected,
         output_dir,
-        start_s=start_s,
-        end_s=end_s,
+        ranges=resolved,
         yes=args.yes,
         verb="merge",
     )
@@ -462,14 +482,12 @@ def crop_main(argv: list[str] | None = None) -> int:
     if resolved is None:
         console.print("[yellow]Cancelled.[/yellow]")
         return 0
-    start_s, end_s = resolved
-    if start_s is None and end_s is None:
+    if all(s is None and e is None for s, e in resolved.values()):
         return 1
     return _run_selected(
         selected,
         output_dir,
-        start_s=start_s,
-        end_s=end_s,
+        ranges=resolved,
         yes=args.yes,
         verb="crop",
     )
