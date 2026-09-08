@@ -80,10 +80,22 @@ function Test-OnPath([string]$Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-function Ensure-Ffmpeg {
+function Refresh-Path {
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+        [System.Environment]::GetEnvironmentVariable("Path", "User")
+}
+
+function Get-MissingFfmpegTools {
     $missing = @()
     if (-not (Test-OnPath "ffmpeg")) { $missing += "ffmpeg" }
     if (-not (Test-OnPath "ffprobe")) { $missing += "ffprobe" }
+    return $missing
+}
+
+function Ensure-Ffmpeg {
+    # WinGet may have updated User/Machine PATH after install; this session can be stale.
+    Refresh-Path
+    $missing = Get-MissingFfmpegTools
     if ($missing.Count -eq 0) {
         return
     }
@@ -91,16 +103,17 @@ function Ensure-Ffmpeg {
     if (Test-OnPath "winget") {
         Info "Installing ffmpeg via winget (missing: $($missing -join ', '))"
         & winget install --id Gyan.FFmpeg -e --accept-package-agreements --accept-source-agreements
-        if ($LASTEXITCODE -ne 0) {
+        $wingetExit = $LASTEXITCODE
+        # Refresh even when winget reports "already installed" / no upgrade (non-zero).
+        Refresh-Path
+        $missing = Get-MissingFfmpegTools
+        if ($missing.Count -eq 0) {
+            return
+        }
+        if ($wingetExit -ne 0) {
             Die "winget install of ffmpeg failed. Install manually from https://ffmpeg.org"
         }
-        # Refresh PATH for current session from Machine + User
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-            [System.Environment]::GetEnvironmentVariable("Path", "User")
-        if (-not (Test-OnPath "ffmpeg") -or -not (Test-OnPath "ffprobe")) {
-            Die "ffmpeg installed but not on PATH yet. Open a new terminal and retry."
-        }
-        return
+        Die "ffmpeg installed but not on PATH yet. Open a new terminal and retry."
     }
 
     Die "Missing required tools: $($missing -join ', '). Install ffmpeg (includes ffprobe), e.g. winget install Gyan.FFmpeg"
