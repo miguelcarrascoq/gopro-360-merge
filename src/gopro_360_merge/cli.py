@@ -265,7 +265,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="gopro-360-merge",
         description=(
             "Detect chaptered GoPro .360 files, select recording blocks, "
-            "and merge them. Use `crop` to trim start/end after viewing."
+            "and merge them. Optional --start/--end trim the selected blocks."
         ),
     )
     _add_common_args(parser)
@@ -295,7 +295,6 @@ def _resolve_range(
     start_arg: str | None,
     end_arg: str | None,
     interactive: bool,
-    require_crop: bool,
 ) -> dict[str, tuple[float | None, float | None]] | None:
     totals = [estimate_block_duration(b) for b in selected]
     for block, total in zip(selected, totals, strict=True):
@@ -319,23 +318,13 @@ def _resolve_range(
             if prompted is None:
                 return None
             start_s, end_s = prompted
-            if not require_crop and start_s <= 0.05 and abs(end_s - total) < 0.5:
+            if start_s <= 0.05 and abs(end_s - total) < 0.5:
                 ranges[block.block_id] = (None, None)
             else:
                 ranges[block.block_id] = (start_s, end_s)
-        if require_crop and all(s is None and e is None for s, e in ranges.values()):
-            console.print(
-                "[red]crop needs --start and/or --end, or an interactive range.[/red]"
-            )
-            return None
         return ranges
 
     if shared_start is None and shared_end is None:
-        if require_crop:
-            console.print(
-                "[red]crop needs --start and/or --end, or an interactive range.[/red]"
-            )
-            return None
         return {block.block_id: (None, None) for block in selected}
 
     start_s = 0.0 if shared_start is None else shared_start
@@ -351,11 +340,10 @@ def _run_selected(
     *,
     ranges: dict[str, tuple[float | None, float | None]],
     yes: bool,
-    verb: str,
 ) -> int:
     console.print()
     console.print(
-        f"Will {verb} [bold]{len(selected)}[/bold] block(s) into {output_dir}"
+        f"Will merge [bold]{len(selected)}[/bold] block(s) into {output_dir}"
     )
     for block in selected:
         start_s, end_s = ranges.get(block.block_id, (None, None))
@@ -367,7 +355,7 @@ def _run_selected(
         console.print(f"  • {block.block_id}: {start_label} → {end_label}")
 
     if not yes:
-        confirmed = questionary.confirm(f"Proceed with {verb}?", default=True).ask()
+        confirmed = questionary.confirm("Proceed with merge?", default=True).ask()
         if not confirmed:
             console.print("[yellow]Cancelled.[/yellow]")
             return 0
@@ -377,8 +365,7 @@ def _run_selected(
     if failures:
         console.print(f"\n[red]Finished with {failures} failure(s).[/red]")
         return 1
-    past = "cropped" if verb == "crop" else "merged"
-    console.print(f"\n[green]All selected blocks {past} successfully.[/green]")
+    console.print("\n[green]All selected blocks merged successfully.[/green]")
     return 0
 
 
@@ -417,7 +404,6 @@ def merge_main(argv: list[str]) -> int:
         start_arg=args.start,
         end_arg=args.end,
         interactive=not args.yes,
-        require_crop=False,
     )
     if resolved is None:
         console.print("[yellow]Cancelled.[/yellow]")
@@ -427,76 +413,11 @@ def merge_main(argv: list[str]) -> int:
         output_dir,
         ranges=resolved,
         yes=args.yes,
-        verb="merge",
-    )
-
-
-def crop_main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="gopro-360-merge crop",
-        description=(
-            "Trim start/end of a chaptered .360 block using the original GS* "
-            "files (required for GoPro Player). Output is final_<id>_crop.360."
-        ),
-    )
-    _add_common_args(parser)
-    args = parser.parse_args(argv)
-    source = Path(args.directory).expanduser().resolve()
-    output_dir = (
-        Path(args.output).expanduser().resolve()
-        if args.output
-        else source / "merged"
-    )
-
-    if not check_dependencies():
-        return 1
-
-    loaded = _load_blocks(source)
-    if isinstance(loaded, int):
-        return loaded
-    blocks = loaded
-
-    console.print(f"Scanning [bold]{source}[/bold]\n")
-    print_blocks_table(blocks)
-
-    if args.all:
-        selected = blocks
-    elif len(blocks) == 1:
-        selected = blocks
-        console.print(f"Using block [cyan]{selected[0].block_id}[/cyan]")
-    else:
-        selected = select_blocks(blocks)
-
-    if not selected:
-        console.print("[yellow]No blocks selected. Exiting.[/yellow]")
-        return 0
-
-    console.print()
-    resolved = _resolve_range(
-        selected,
-        start_arg=args.start,
-        end_arg=args.end,
-        interactive=not (args.start or args.end),
-        require_crop=True,
-    )
-    if resolved is None:
-        console.print("[yellow]Cancelled.[/yellow]")
-        return 0
-    if all(s is None and e is None for s, e in resolved.values()):
-        return 1
-    return _run_selected(
-        selected,
-        output_dir,
-        ranges=resolved,
-        yes=args.yes,
-        verb="crop",
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] == "crop":
-        return crop_main(argv[1:])
     if argv and argv[0] == "gui":
         from gopro_360_merge.gui import main as gui_main
 

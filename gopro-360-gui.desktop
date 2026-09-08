@@ -2,7 +2,7 @@
 Type=Application
 Version=1.0
 Name=GoPro 360 Merge
-Comment=Merge and crop chaptered GoPro .360 blocks
+Comment=Merge chaptered GoPro .360 blocks
 Exec=PLACEHOLDER_EXEC
 Icon=PLACEHOLDER_ICON
 Path=PLACEHOLDER_PATH

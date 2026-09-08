@@ -30,7 +30,7 @@ Or use the run / GUI scripts below: they create `.venv`, install the package, an
 
 ## Desktop GUI
 
-Cross-platform UI (macOS / Windows / Linux) with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): pick a folder, select blocks, set optional start/end trim, and run **Merge** or **Crop**.
+Cross-platform UI (macOS / Windows / Linux) with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): pick a folder, select blocks, set optional start/end trim, and run **Merge**.
 
 ```bash
 # macOS / Linux
@@ -99,34 +99,11 @@ After selecting block(s), the CLI probes chapter durations and shows each **tota
 
 For each selected block the tool joins chapters with [mp4-merge](https://github.com/gyroflow/mp4-merge), which concatenates `mdat` and rewrites sample tables while keeping the camera’s tracks and `udta` metadata. That is what GoPro Player needs for a file larger than 4 GB. If mp4-merge is unavailable, it falls back to ffmpeg concat + `udtacopy`.
 
-Outputs land in `<directory>/merged/` by default (`final_<id>.360`).
-
-## Crop start/end
-
-Do **not** ffmpeg-trim a 20+ GB `final_*.360` — GoPro Player will not open that remux. Keep the original `GS*.360` chapters.
-
-After watching the merged file in Player, run:
-
-```bat
-crop.bat
-crop.bat D:\path\to\gopro\folder
-crop.bat D:\path\to\gopro\folder --start 00:02:00 --end 00:50:00 -y
-```
-
-```bash
-./crop.sh
-./crop.sh /path/to/gopro/folder --start 00:02:00 --end 00:50:00 -y
-gopro-360-merge crop /path/to/gopro/folder --start 2:00 --end 50:00
-```
-
-The crop tool maps the range onto the original chapters. Cuts on **chapter
-boundaries** only drop whole `GS*.360` files and join with mp4-merge. A
-**mid-chapter** cut remuxes every selected chapter with the same recipe,
-normalizes timestamps, then joins with mp4-merge and copies GoPro `udta` from
-the camera original (needed for 360 pan in Player). Stream-copy trim is
-keyframe-aligned (about ±1 s). Output is `merged/final_<id>_crop.360`.
-
-`--start` / `--end` also work on the merge command if you already know the times (same range for every selected block).
+Outputs land in `<directory>/merged/` by default (`final_<id>.360`). With
+`--start` / `--end` (or interactive times), mid-range cuts remux from the
+original `GS*.360` chapters (keyframe-aligned, about ±1 s) and write
+`final_<id>_crop.360` — do not ffmpeg-trim a finished multi‑GB `.360` if you
+need GoPro Player compatibility.
 
 ## License
 

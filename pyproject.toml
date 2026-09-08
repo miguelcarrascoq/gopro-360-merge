@@ -24,7 +24,6 @@ icons = [
 
 [project.scripts]
 gopro-360-merge = "gopro_360_merge.cli:main"
-gopro-360-crop = "gopro_360_merge.cli:crop_main"
 gopro-360-gui = "gopro_360_merge.gui:main"
 
 [tool.setuptools.packages.find]

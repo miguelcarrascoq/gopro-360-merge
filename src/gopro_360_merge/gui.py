@@ -1,4 +1,4 @@
-"""Desktop GUI for merging / cropping GoPro .360 chapter blocks."""
+"""Desktop GUI for merging GoPro .360 chapter blocks."""
 
 from __future__ import annotations
 
@@ -109,64 +109,39 @@ class App(ctk.CTk):
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
-        self.grid_rowconfigure(5, weight=1)
-
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
-        header.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(header, text="Modo:", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=0, column=0, sticky="w"
-        )
-        self.mode_var = ctk.StringVar(value="merge")
-        mode = ctk.CTkSegmentedButton(
-            header,
-            values=["Merge", "Crop"],
-            command=self._on_mode_change,
-        )
-        mode.set("Merge")
-        mode.grid(row=0, column=1, sticky="w", padx=(12, 0))
-        self._mode_button = mode
-        ctk.CTkLabel(
-            header,
-            text="* obligatorio",
-            text_color="gray60",
-            font=ctk.CTkFont(size=12),
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.grid_rowconfigure(4, weight=1)
 
         # Source folder
         folder_frame = ctk.CTkFrame(self)
-        folder_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=8)
+        folder_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 6))
         folder_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(folder_frame, text="Carpeta GS*.360 *").grid(
-            row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 4)
+            row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(8, 4)
         )
         self.folder_var = ctk.StringVar(value="")
         self.folder_entry = ctk.CTkEntry(folder_frame, textvariable=self.folder_var)
-        self.folder_entry.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(12, 8), pady=(0, 12))
+        self.folder_entry.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(12, 8), pady=(0, 10))
         ctk.CTkButton(
             folder_frame,
             text="Elegir carpeta…",
             width=140,
             command=self._pick_folder,
-        ).grid(row=1, column=2, padx=(0, 12), pady=(0, 12))
+        ).grid(row=1, column=2, padx=(0, 8), pady=(0, 10))
         ctk.CTkButton(
             folder_frame,
             text="Escanear",
             width=100,
             command=self._scan_folder,
-        ).grid(row=1, column=3, padx=(0, 12), pady=(0, 12))
+        ).grid(row=1, column=3, padx=(0, 12), pady=(0, 10))
 
-        # Blocks
+        # Blocks (content-sized, no scroll viewport)
         blocks_outer = ctk.CTkFrame(self)
-        blocks_outer.grid(row=2, column=0, sticky="nsew", padx=16, pady=8)
+        blocks_outer.grid(row=1, column=0, sticky="ew", padx=16, pady=6)
         blocks_outer.grid_columnconfigure(0, weight=1)
-        blocks_outer.grid_rowconfigure(1, weight=1)
 
         blocks_header = ctk.CTkFrame(blocks_outer, fg_color="transparent")
-        blocks_header.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+        blocks_header.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
         blocks_header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             blocks_header,
@@ -184,51 +159,53 @@ class App(ctk.CTk):
             text="Ninguno",
             width=90,
             command=self._select_none,
-        ).grid(row=0, column=2, padx=4)
+        ).grid(row=0, column=2, padx=(4, 0))
 
-        self.blocks_scroll = ctk.CTkScrollableFrame(blocks_outer)
-        self.blocks_scroll.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        self.blocks_scroll.grid_columnconfigure(0, weight=1)
+        self.blocks_list = ctk.CTkFrame(blocks_outer, fg_color="transparent")
+        self.blocks_list.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        self.blocks_list.grid_columnconfigure(0, weight=1)
         self._blocks_placeholder = ctk.CTkLabel(
-            self.blocks_scroll,
+            self.blocks_list,
             text="Elige una carpeta y pulsa Escanear.",
             text_color="gray60",
         )
-        self._blocks_placeholder.grid(row=0, column=0, sticky="w", padx=4, pady=8)
+        self._blocks_placeholder.grid(row=0, column=0, sticky="w", padx=2, pady=4)
 
         # Output + trim
         opts = ctk.CTkFrame(self)
-        opts.grid(row=3, column=0, sticky="ew", padx=16, pady=8)
+        opts.grid(row=2, column=0, sticky="ew", padx=16, pady=6)
         opts.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(opts, text="Salida *").grid(
-            row=0, column=0, sticky="w", padx=12, pady=(10, 4)
+            row=0, column=0, sticky="w", padx=12, pady=(8, 4)
         )
         self.output_var = ctk.StringVar(value="")
         ctk.CTkEntry(opts, textvariable=self.output_var).grid(
-            row=1, column=0, columnspan=2, sticky="ew", padx=(12, 8), pady=(0, 8)
+            row=1, column=0, columnspan=2, sticky="ew", padx=(12, 8), pady=(0, 6)
         )
         ctk.CTkButton(
             opts,
             text="…",
             width=40,
             command=self._pick_output,
-        ).grid(row=1, column=2, padx=(0, 12), pady=(0, 8))
+        ).grid(row=1, column=2, padx=(0, 12), pady=(0, 6))
 
-        self.start_label = ctk.CTkLabel(opts, text="Inicio (hh:mm:ss) · opcional")
-        self.start_label.grid(row=2, column=0, sticky="w", padx=12, pady=(4, 0))
-        self.end_label = ctk.CTkLabel(opts, text="Fin (hh:mm:ss) · opcional")
-        self.end_label.grid(row=2, column=1, sticky="w", padx=12, pady=(4, 0))
+        ctk.CTkLabel(opts, text="Inicio (hh:mm:ss) · opcional").grid(
+            row=2, column=0, sticky="w", padx=12, pady=(2, 0)
+        )
+        ctk.CTkLabel(opts, text="Fin (hh:mm:ss) · opcional").grid(
+            row=2, column=1, sticky="w", padx=12, pady=(2, 0)
+        )
         self.start_var = ctk.StringVar(value="")
         self.end_var = ctk.StringVar(value="")
         ctk.CTkEntry(opts, textvariable=self.start_var, placeholder_text="vacío = 0").grid(
-            row=3, column=0, sticky="ew", padx=(12, 8), pady=(0, 8)
+            row=3, column=0, sticky="ew", padx=(12, 8), pady=(0, 6)
         )
         ctk.CTkEntry(
             opts,
             textvariable=self.end_var,
             placeholder_text="vacío = duración total",
-        ).grid(row=3, column=1, sticky="ew", padx=(12, 8), pady=(0, 8))
+        ).grid(row=3, column=1, sticky="ew", padx=(12, 8), pady=(0, 6))
 
         self.duration_label = ctk.CTkLabel(
             opts,
@@ -236,21 +213,18 @@ class App(ctk.CTk):
             text_color="gray70",
         )
         self.duration_label.grid(
-            row=4, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 10)
+            row=4, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 4)
         )
-        self.trim_hint = ctk.CTkLabel(
+        ctk.CTkLabel(
             opts,
-            text="Merge: deja vacío para la grabación completa. Recorte ±1 s (keyframes).",
+            text="Deja vacío para la grabación completa. Recorte ±1 s (keyframes).",
             text_color="gray60",
             font=ctk.CTkFont(size=12),
-        )
-        self.trim_hint.grid(
-            row=5, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 10)
-        )
+        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8))
 
         # Actions
         actions = ctk.CTkFrame(self, fg_color="transparent")
-        actions.grid(row=4, column=0, sticky="ew", padx=16, pady=4)
+        actions.grid(row=3, column=0, sticky="ew", padx=16, pady=4)
         actions.grid_columnconfigure(0, weight=1)
         self.run_button = ctk.CTkButton(
             actions,
@@ -260,9 +234,9 @@ class App(ctk.CTk):
         )
         self.run_button.grid(row=0, column=0, sticky="ew")
 
-        # Progress + log
+        # Progress + log (takes remaining vertical space)
         bottom = ctk.CTkFrame(self)
-        bottom.grid(row=5, column=0, sticky="nsew", padx=16, pady=(8, 16))
+        bottom.grid(row=4, column=0, sticky="nsew", padx=16, pady=(6, 16))
         bottom.grid_columnconfigure(0, weight=1)
         bottom.grid_rowconfigure(2, weight=1)
 
@@ -275,24 +249,6 @@ class App(ctk.CTk):
         self.log_box = ctk.CTkTextbox(bottom, height=140)
         self.log_box.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.log_box.configure(state="disabled")
-
-    def _on_mode_change(self, value: str) -> None:
-        if value == "Crop":
-            self.mode_var.set("crop")
-            self.run_button.configure(text="Ejecutar crop")
-            self.start_label.configure(text="Inicio (hh:mm:ss) *")
-            self.end_label.configure(text="Fin (hh:mm:ss) *")
-            self.trim_hint.configure(
-                text="Crop: indica inicio y/o fin (al menos uno). Salida: final_<id>_crop.360."
-            )
-        else:
-            self.mode_var.set("merge")
-            self.run_button.configure(text="Ejecutar merge")
-            self.start_label.configure(text="Inicio (hh:mm:ss) · opcional")
-            self.end_label.configure(text="Fin (hh:mm:ss) · opcional")
-            self.trim_hint.configure(
-                text="Merge: deja vacío para la grabación completa. Recorte ±1 s (keyframes)."
-            )
 
     def _log(self, message: str) -> None:
         self.log_box.configure(state="normal")
@@ -318,7 +274,7 @@ class App(ctk.CTk):
             self.output_var.set(path)
 
     def _clear_blocks_ui(self) -> None:
-        for child in self.blocks_scroll.winfo_children():
+        for child in self.blocks_list.winfo_children():
             child.destroy()
         self._block_vars.clear()
 
@@ -347,10 +303,10 @@ class App(ctk.CTk):
 
         if not blocks:
             ctk.CTkLabel(
-                self.blocks_scroll,
+                self.blocks_list,
                 text=f"No se encontraron GS*.360 en {source}",
                 text_color="orange",
-            ).grid(row=0, column=0, sticky="w", padx=4, pady=8)
+            ).grid(row=0, column=0, sticky="w", padx=2, pady=4)
             self.duration_label.configure(text="Duración: —")
             self._log(f"Sin bloques en {source}")
             return
@@ -364,12 +320,12 @@ class App(ctk.CTk):
                 f"{block.first.path.name} … {block.last.path.name}"
             )
             cb = ctk.CTkCheckBox(
-                self.blocks_scroll,
+                self.blocks_list,
                 text=text,
                 variable=var,
                 command=self._on_selection_change,
             )
-            cb.grid(row=i, column=0, sticky="w", padx=4, pady=4)
+            cb.grid(row=i, column=0, sticky="ew", padx=2, pady=2)
 
         self._log(f"Detectados {len(blocks)} bloque(s) en {source}")
         self._on_selection_change()
@@ -430,8 +386,6 @@ class App(ctk.CTk):
     def _resolve_ranges(
         self,
         selected: list[Block],
-        *,
-        require_crop: bool,
     ) -> dict[str, tuple[float | None, float | None]] | None:
         start_raw = self.start_var.get()
         end_raw = self.end_var.get()
@@ -443,12 +397,6 @@ class App(ctk.CTk):
             return None
 
         if shared_start is None and shared_end is None:
-            if require_crop:
-                messagebox.showerror(
-                    "Crop",
-                    "Indica inicio y/o fin para recortar (hh:mm:ss).",
-                )
-                return None
             return {b.block_id: (None, None) for b in selected}
 
         start_s = 0.0 if shared_start is None else shared_start
@@ -487,9 +435,7 @@ class App(ctk.CTk):
             return
         output_dir = Path(out_raw).expanduser().resolve()
 
-        mode = self.mode_var.get()
-        require_crop = mode == "crop"
-        ranges = self._resolve_ranges(selected, require_crop=require_crop)
+        ranges = self._resolve_ranges(selected)
         if ranges is None:
             return
 
@@ -502,8 +448,7 @@ class App(ctk.CTk):
             )
             return
 
-        verb = "crop" if require_crop else "merge"
-        summary_lines = [f"Se va a {verb} {len(selected)} bloque(s) → {output_dir}"]
+        summary_lines = [f"Se va a merge {len(selected)} bloque(s) → {output_dir}"]
         for block in selected:
             start_s, end_s = ranges[block.block_id]
             if start_s is None and end_s is None:
@@ -520,7 +465,7 @@ class App(ctk.CTk):
         self.progress.set(0)
         self.status_label.configure(text="Iniciando…")
         self._log("---")
-        self._log(f"Iniciando {verb} de {len(selected)} bloque(s)")
+        self._log(f"Iniciando merge de {len(selected)} bloque(s)")
 
         def worker() -> None:
             failures = 0
