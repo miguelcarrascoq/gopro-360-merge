@@ -69,34 +69,110 @@ def write_filelist(block: Block, filelist_path: Path) -> Path:
     return filelist_path
 
 
+def probe_streams(path: Path) -> list[dict]:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_streams",
+        "-of",
+        "json",
+        str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"ffprobe failed for {path}: {detail}")
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"ffprobe returned invalid JSON for {path}") from exc
+    return list(data.get("streams") or [])
+
+
+def _codec_tag(stream: dict) -> str:
+    return (stream.get("codec_tag_string") or "").strip()
+
+
+def concat_map_args(first_chapter: Path) -> list[str]:
+    """Pick .360 tracks by codec tag so MAX and MAX 2 layouts both work.
+
+    GoPro Labs' hardcoded ``-map 0:0 -map 0:1 -map 0:3 -map 0:5`` assumes
+    original MAX order (two videos first). MAX 2 stores the second fisheye
+    later and AAC at index 1. Mapping by tag keeps both lenses, AAC, GPMF,
+    and ambisonic when present. tmcd/fdsc are skipped: ffmpeg cannot mux them
+    cleanly and GoPro Player does not need them to open the file.
+    """
+    streams = probe_streams(first_chapter)
+    videos = [
+        s
+        for s in streams
+        if s.get("codec_type") == "video"
+        and _codec_tag(s) in {"hvc1", "hev1", "avc1"}
+    ]
+    aac = [s for s in streams if _codec_tag(s) == "mp4a"]
+    gpmd = [s for s in streams if _codec_tag(s) == "gpmd"]
+    amb = [s for s in streams if _codec_tag(s) == "in32"]
+
+    if len(videos) < 2:
+        raise RuntimeError(
+            f"{first_chapter.name}: expected 2 video tracks for .360, "
+            f"found {len(videos)}"
+        )
+    if not gpmd:
+        raise RuntimeError(
+            f"{first_chapter.name}: missing GoPro gpmd metadata track"
+        )
+
+    selected = videos[:2] + aac[:1] + gpmd[:1] + amb[:1]
+    args: list[str] = []
+    for stream in selected:
+        args.extend(["-map", f"0:{stream['index']}"])
+    return args
+
+
 def run_ffmpeg_concat(
     filelist_path: Path,
     output_mp4: Path,
     total_seconds: float,
+    map_args: list[str],
     on_progress: Callable[[float, float], None] | None = None,
 ) -> None:
+    # copy_unknown + unofficial: pass through gpmd (and ambisonic).
+    # mov/mp41 + write_tmcd 0: match a camera .360 well enough for GoPro Player.
+    # Both video tracks must be default/enabled; otherwise Player/MF ignores the
+    # second lens and the merged file will not open as 360.
     cmd = [
         "ffmpeg",
         "-y",
         "-hide_banner",
         "-loglevel",
         "error",
+        "-copy_unknown",
+        "-strict",
+        "unofficial",
         "-f",
         "concat",
         "-safe",
         "0",
         "-i",
         str(filelist_path),
+        *map_args,
         "-c",
         "copy",
-        "-map",
-        "0:0",
-        "-map",
-        "0:1",
-        "-map",
-        "0:3",
-        "-map",
-        "0:5",
+        "-copy_unknown",
+        "-strict",
+        "unofficial",
+        "-disposition:v:0",
+        "default",
+        "-disposition:v:1",
+        "default",
+        "-f",
+        "mov",
+        "-brand",
+        "mp41",
+        "-write_tmcd",
+        "0",
         "-progress",
         "pipe:1",
         "-nostats",
@@ -227,6 +303,7 @@ def merge_block(
         on_stage("probe", 1.0, 1.0)
 
     write_filelist(block, filelist_path)
+    map_args = concat_map_args(block.first.path)
 
     def ffmpeg_progress(current: float, total: float) -> None:
         if on_stage:
@@ -234,7 +311,9 @@ def merge_block(
 
     if on_stage:
         on_stage("ffmpeg", 0.0, max(total_seconds, 0.001))
-    run_ffmpeg_concat(filelist_path, output_mp4, total_seconds, ffmpeg_progress)
+    run_ffmpeg_concat(
+        filelist_path, output_mp4, total_seconds, map_args, ffmpeg_progress
+    )
 
     if on_stage:
         on_stage("udtacopy", 0.0, 1.0)

@@ -55,13 +55,7 @@ The run scripts ask for the GoPro folder first (or show the path you passed and 
 For each selected block the tool:
 
 1. Writes `filelist_<id>.txt` (ffmpeg concat demuxer)
-2. Runs:
-
-   ```bash
-   ffmpeg -y -f concat -safe 0 -i filelist_<id>.txt \
-     -c copy -map 0:0 -map 0:1 -map 0:3 -map 0:5 \
-     final_<id>.mp4
-   ```
+2. Runs ffmpeg concat with `-c copy`, mapping both fisheye video tracks plus AAC, GPMF, and ambisonic when present (stream indexes differ between MAX and MAX 2). The mux uses `-f mov -brand mp41 -write_tmcd 0` so GoPro Player still recognizes the file.
 
 3. Copies GoPro `udta` metadata:
 
