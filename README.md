@@ -78,12 +78,11 @@ gopro-360-merge crop /path/to/gopro/folder --start 2:00 --end 50:00
 ```
 
 The crop tool maps the range onto the original chapters. Cuts on **chapter
-boundaries** only drop whole `GS*.360` files and join with mp4-merge (Player-safe
-for long files). A **mid-chapter** cut remuxes every selected chapter with the
-same ffmpeg recipe (mixing a remuxed chapter with camera originals corrupts the
-file), then joins those remuxes with ffmpeg concat + `udtacopy`. Stream-copy
-trim is keyframe-aligned (about ±1 s). Output is `merged/final_<id>_crop.360`
-so the full merge is left untouched.
+boundaries** only drop whole `GS*.360` files and join with mp4-merge. A
+**mid-chapter** cut remuxes every selected chapter with the same recipe,
+normalizes timestamps, then joins with mp4-merge and copies GoPro `udta` from
+the camera original (needed for 360 pan in Player). Stream-copy trim is
+keyframe-aligned (about ±1 s). Output is `merged/final_<id>_crop.360`.
 
 `--start` / `--end` also work on the merge command if you already know the times.
 

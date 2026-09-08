@@ -258,14 +258,41 @@ def _moov_has_udta(path: Path) -> bool:
     return False
 
 
+def _udta_size(path: Path) -> int:
+    """Return size of the ``udta`` atom inside ``moov``, or 0 if missing."""
+    for tag, offset, size in _top_level_atoms(path):
+        if tag != b"moov":
+            continue
+        end = offset + size
+        pos = offset + 8
+        with path.open("rb") as fp:
+            while pos + 8 <= end:
+                fp.seek(pos)
+                hdr = fp.read(8)
+                if len(hdr) < 8:
+                    return 0
+                child_size = int.from_bytes(hdr[:4], "big")
+                child_tag = hdr[4:8]
+                if child_size < 8:
+                    return 0
+                if child_tag == b"udta":
+                    return child_size
+                pos += child_size
+        return 0
+    return 0
+
+
 def run_udtacopy(source_360: Path, dest_mp4: Path) -> None:
     """
     Copy GoPro udta metadata from *source_360* onto *dest_mp4*.
 
     Upstream GoPro Labs ``udtacopy`` always exits with status 1, even on
-    success, so we accept 0/1 and verify that ``moov`` contains ``udta``.
+    success, so we accept 0/1 and verify that ``moov`` contains a real
+    ``udta`` (not ffmpeg's empty stub of ~32 bytes). Always prefer a camera
+    original as *source_360* — copying from a remux sometimes no-ops.
     """
     udtacopy = resolve_udtacopy()
+    src_udta = _udta_size(source_360)
     cmd = [str(udtacopy), str(source_360), str(dest_mp4)]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     # GoPro's binary returns 1 unconditionally after a normal run (success or
@@ -273,10 +300,17 @@ def run_udtacopy(source_360: Path, dest_mp4: Path) -> None:
     if result.returncode not in (0, 1):
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(f"udtacopy failed (exit {result.returncode}): {detail}")
-    if not _moov_has_udta(dest_mp4):
+    dest_udta = _udta_size(dest_mp4)
+    if dest_udta < 64:
         raise RuntimeError(
             "udtacopy finished but destination has no moov/udta metadata; "
             "source may be missing GoPro udta or the copy silently failed"
+        )
+    # ffmpeg often leaves a ~32-byte empty udta; a real GoPro block is ~20KB+.
+    if src_udta >= 1024 and dest_udta < max(1024, src_udta // 2):
+        raise RuntimeError(
+            f"udtacopy left a stub udta ({dest_udta} bytes) from source "
+            f"{source_360.name} ({src_udta} bytes); 360 metadata was not copied"
         )
 
 
@@ -361,16 +395,18 @@ def merge_block(
             on_stage("join", current, total)
 
     sources = [ch.path for ch in block.chapters]
-    # Soft (mid-chapter) cuts remux every selected piece to one track layout.
-    # mp4-merge of remuxed+original mixes track counts and writes garbage;
-    # mp4-merge of remuxed+remuxed also breaks timestamps (start≈duration).
+    # Soft (mid-chapter) cuts remux every selected piece to one track layout,
+    # neutralize timestamps, then mp4-merge (same tool as a full camera merge).
+    # Do NOT ffmpeg-concat the final long file and paste udta — Player crashes.
     remuxed_sources = False
     join_seconds = total_seconds
+    udta_source = block.first.path
     if trimmed:
         range_start = 0.0 if start_s is None else start_s
         range_end = total_seconds if end_s is None else end_s
         pieces = plan_trim_pieces(block, range_start, range_end)
         join_seconds = float(sum(p.duration for p in pieces))
+        udta_source = pieces[0].chapter.path
         soft_trim = any(p.needs_trim for p in pieces)
         if on_stage:
             on_stage("trim", 0.0, 1.0)
@@ -384,7 +420,6 @@ def merge_block(
                 )
                 remuxed_sources = True
             else:
-                # Whole chapters only: keep camera files and mp4-merge them.
                 sources = [p.chapter.path for p in pieces]
         except Exception:
             if temp_dir.exists():
@@ -398,7 +433,7 @@ def merge_block(
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     merger = ensure_mp4_merge()
-    if merger is not None and not remuxed_sources:
+    if merger is not None:
         try:
             if len(sources) == 1:
                 if on_stage:
@@ -406,6 +441,8 @@ def merge_block(
                 if output_360.exists():
                     output_360.unlink()
                 shutil.copy2(sources[0], output_360)
+                if remuxed_sources:
+                    run_udtacopy(udta_source, output_360)
                 if on_stage:
                     on_stage("join", 1.0, 1.0)
             else:
@@ -416,32 +453,25 @@ def merge_block(
                         float(max(sum(p.stat().st_size for p in sources), 1)),
                     )
                 run_mp4_merge(sources, output_360, join_progress)
+                if remuxed_sources:
+                    if on_stage:
+                        on_stage("udtacopy", 0.0, 1.0)
+                    run_udtacopy(udta_source, output_360)
+            if on_stage:
+                on_stage("udtacopy", 1.0, 1.0)
+                on_stage("rename", 1.0, 1.0)
         finally:
             cleanup_temp()
-        if on_stage:
-            on_stage("udtacopy", 1.0, 1.0)
-            on_stage("rename", 1.0, 1.0)
         if not keep_filelist and filelist_path.exists():
             filelist_path.unlink()
         return output_360
 
+    # Fallback without mp4-merge: ffmpeg concat (may not pan in Player).
     map_args = concat_map_args(sources[0])
     if on_stage:
         on_stage("join", 0.0, max(join_seconds, 0.001))
     try:
         if len(sources) == 1:
-            if remuxed_sources:
-                # Already a Player-safe remux; copy as final .360
-                if output_360.exists():
-                    output_360.unlink()
-                shutil.copy2(sources[0], output_360)
-                cleanup_temp()
-                if on_stage:
-                    on_stage("udtacopy", 1.0, 1.0)
-                    on_stage("rename", 1.0, 1.0)
-                if not keep_filelist and filelist_path.exists():
-                    filelist_path.unlink()
-                return output_360
             shutil.copy2(sources[0], output_mp4)
         else:
             trim_list = output_dir / f"filelist_{block.block_id}_crop.txt"
@@ -461,12 +491,11 @@ def merge_block(
             if not keep_filelist and trim_list.exists():
                 trim_list.unlink()
     finally:
-        if not (remuxed_sources and len(sources) == 1):
-            cleanup_temp()
+        cleanup_temp()
 
     if on_stage:
         on_stage("udtacopy", 0.0, 1.0)
-    run_udtacopy(sources[0], output_mp4)
+    run_udtacopy(udta_source, output_mp4)
     if on_stage:
         on_stage("udtacopy", 1.0, 1.0)
 

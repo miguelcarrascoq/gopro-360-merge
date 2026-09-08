@@ -120,11 +120,12 @@ def plan_trim_pieces(
 
 
 def trim_map_args(first_chapter: Path) -> list[str]:
-    """Maps for a Player-safe chapter remux (matches known-good short tests).
+    """Maps for a Player-safe chapter remux.
 
-    Keeps both HEVC lenses, AAC, and GPMF. Skips tmcd/fdsc (ffmpeg cannot mux
-    them cleanly) and ambisonic (ffmpeg rewrites ``in32`` → ``lpcm``, which
-    breaks uniform tags across remuxed pieces).
+    Camera order is roughly ``video0, aac, …, video1``. Putting both lenses
+    first (``v0,v1,aac,gpmd``) opens in Player but often as a flat non-pannable
+    image. Match camera order as closely as ffmpeg allows: ``v0, aac, gpmd, v1``.
+    Skip tmcd/fdsc (ffmpeg corrupts their tags) and ambisonic (``in32``→``lpcm``).
     """
     streams = probe_streams(first_chapter)
     videos = [
@@ -148,7 +149,8 @@ def trim_map_args(first_chapter: Path) -> list[str]:
         raise RuntimeError(
             f"{first_chapter.name}: missing GoPro gpmd metadata track"
         )
-    selected = videos[:2] + aac[:1] + gpmd[:1]
+    # Camera-like: first lens, AAC, GPMF, second lens.
+    selected = [videos[0]] + aac[:1] + gpmd[:1] + [videos[1]]
     args: list[str] = []
     for stream in selected:
         args.extend(["-map", f"0:{stream['index']}"])
@@ -225,6 +227,52 @@ def trim_chapter_file(
     run_udtacopy(source, dest_mp4)
 
 
+def neutralize_chapter_timestamps(
+    source: Path,
+    dest: Path,
+    udta_from: Path,
+) -> None:
+    """Force track start times to 0 so mp4-merge does not insert empty edits.
+
+    Remuxes from ``-ss`` often keep a tiny non-zero video start. Joining those
+    with mp4-merge doubles the reported duration (start≈media duration). A
+    stream-copy with ``-ignore_editlist 1`` clears that before the join.
+    """
+    if dest.exists():
+        dest.unlink()
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ignore_editlist",
+        "1",
+        "-i",
+        str(source),
+        "-map",
+        "0",
+        "-c",
+        "copy",
+        "-avoid_negative_ts",
+        "make_zero",
+        "-f",
+        "mov",
+        "-brand",
+        "mp41",
+        "-write_tmcd",
+        "0",
+        str(dest),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"ffmpeg neutralize failed (exit {result.returncode}): {detail}")
+    if not dest.is_file() or dest.stat().st_size < 64:
+        raise RuntimeError(f"ffmpeg neutralize produced no output: {dest}")
+    run_udtacopy(udta_from, dest)
+
+
 def materialize_pieces(
     pieces: list[TrimPiece],
     temp_dir: Path,
@@ -237,7 +285,8 @@ def materialize_pieces(
     Untrimmed pieces are passed through as the original ``GS*.360`` paths
     unless *remux_all* is set. Mid-chapter cuts must remux **every** selected
     piece with the same ffmpeg recipe: mp4-merge corrupts the output if a
-    remuxed chapter (4–5 tracks) is mixed with camera originals (7 tracks).
+    remuxed chapter is mixed with camera originals (different track counts).
+    Each remux is timestamp-neutralized so mp4-merge keeps sane durations.
     """
     temp_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
@@ -249,7 +298,7 @@ def materialize_pieces(
         if not piece.needs_trim and not remux_all:
             paths.append(piece.chapter.path)
             continue
-        dest = temp_dir / f"trim_{piece.chapter.path.stem}.mp4"
+        raw = temp_dir / f"raw_{piece.chapter.path.stem}.mp4"
         dest_360 = temp_dir / f"trim_{piece.chapter.path.stem}.360"
 
         def piece_progress(current: float, total_s: float, *, _done: float = done) -> None:
@@ -259,14 +308,15 @@ def materialize_pieces(
 
         trim_chapter_file(
             piece.chapter.path,
-            dest,
+            raw,
             piece.ss,
             piece.duration,
             piece_progress,
         )
         if dest_360.exists():
             dest_360.unlink()
-        dest.replace(dest_360)
+        neutralize_chapter_timestamps(raw, dest_360, piece.chapter.path)
+        raw.unlink(missing_ok=True)
         paths.append(dest_360)
         done += 1.0
         if on_progress:
