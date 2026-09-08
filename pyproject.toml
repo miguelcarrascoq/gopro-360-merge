@@ -16,6 +16,12 @@ dependencies = [
     "customtkinter>=5.2",
 ]
 
+[project.optional-dependencies]
+icons = [
+    "cairosvg>=2.7",
+    "pillow>=10",
+]
+
 [project.scripts]
 gopro-360-merge = "gopro_360_merge.cli:main"
 gopro-360-crop = "gopro_360_merge.cli:crop_main"
@@ -25,4 +31,8 @@ gopro-360-gui = "gopro_360_merge.gui:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-gopro_360_merge = ["vendor/udtacopy.zip", "vendor/NOTICE"]
+gopro_360_merge = [
+    "vendor/udtacopy.zip",
+    "vendor/NOTICE",
+    "assets/*",
+]

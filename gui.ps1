@@ -117,10 +117,35 @@ function Ensure-Ffmpeg {
     Die "Missing required tools: $($missing -join ', '). Install ffmpeg (includes ffprobe), e.g. winget install Gyan.FFmpeg"
 }
 
+function Ensure-Shortcut {
+    $ico = Join-Path $ScriptDir "src\gopro_360_merge\assets\app_icon.ico"
+    $bat = Join-Path $ScriptDir "gui.bat"
+    $lnk = Join-Path $ScriptDir "Gopro360Merge.lnk"
+    if (-not (Test-Path -LiteralPath $ico)) {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $bat)) {
+        return
+    }
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($lnk)
+        $shortcut.TargetPath = $bat
+        $shortcut.WorkingDirectory = $ScriptDir
+        $shortcut.IconLocation = "$ico,0"
+        $shortcut.Description = "GoPro 360 Merge"
+        $shortcut.Save()
+        Info "Shortcut updated: Gopro360Merge.lnk"
+    } catch {
+        # Shortcut is optional; continue launching the GUI.
+    }
+}
+
 $SystemPython = Require-Python
 Ensure-Venv $SystemPython
 Ensure-Package
 Ensure-Ffmpeg
+Ensure-Shortcut
 
 Write-Host ""
 Info "Opening GUI…"

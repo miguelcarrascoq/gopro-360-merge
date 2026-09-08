@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Launcher stub for Gopro360Merge.app — runs repo gui.sh (Dock shows AppIcon).
+set -euo pipefail
+
+# .../Gopro360Merge.app/Contents/MacOS → repo root is three levels up
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+
+if [[ ! -x "$REPO_ROOT/gui.sh" ]]; then
+  osascript -e 'display dialog "No se encontró gui.sh junto a Gopro360Merge.app. Abre el .app desde la raíz del repo clonado." buttons {"OK"} default button 1 with icon stop' || true
+  exit 1
+fi
+
+exec "$REPO_ROOT/gui.sh"

@@ -64,10 +64,27 @@ ensure_ffmpeg() {
   die "Missing required tools: ${missing[*]}. Install ffmpeg (includes ffprobe), e.g. brew install ffmpeg"
 }
 
+# Linux: install a .desktop launcher with absolute Icon/Exec for the app menu.
+ensure_linux_desktop() {
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  local icon="$SCRIPT_DIR/src/gopro_360_merge/assets/app_icon.png"
+  local template="$SCRIPT_DIR/gopro-360-gui.desktop"
+  local dest="${XDG_DATA_HOME:-$HOME/.local/share}/applications/gopro-360-gui.desktop"
+  [[ -f "$icon" && -f "$template" ]] || return 0
+  mkdir -p "$(dirname "$dest")"
+  sed \
+    -e "s|PLACEHOLDER_EXEC|$SCRIPT_DIR/gui.sh|" \
+    -e "s|PLACEHOLDER_ICON|$icon|" \
+    -e "s|PLACEHOLDER_PATH|$SCRIPT_DIR|" \
+    "$template" >"$dest"
+  chmod +x "$dest" 2>/dev/null || true
+}
+
 require_python
 ensure_venv
 ensure_package
 ensure_ffmpeg
+ensure_linux_desktop
 
 echo
 info "Opening GUI…"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import sys
 import threading
+import tkinter as tk
 import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
 from pathlib import Path
@@ -14,6 +15,10 @@ import customtkinter as ctk
 from gopro_360_merge.detect import Block, scan_directory
 from gopro_360_merge.merge import estimate_block_duration, merge_block, require_tools
 from gopro_360_merge.trim import format_timecode, parse_timecode
+
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+APP_ICON_PNG = ASSETS_DIR / "app_icon.png"
+APP_ICON_ICO = ASSETS_DIR / "app_icon.ico"
 
 STAGE_LABELS_ES = {
     "probe": "Calculando duración",
@@ -75,6 +80,8 @@ class App(ctk.CTk):
         self.title("gopro-360-merge")
         self.geometry("780x720")
         self.minsize(640, 560)
+        self._icon_images: list[tk.PhotoImage] = []
+        self._apply_app_icon()
 
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
@@ -87,6 +94,18 @@ class App(ctk.CTk):
 
         self._build_ui()
         self.after(100, self._poll_events)
+
+    def _apply_app_icon(self) -> None:
+        """Set window / taskbar icon; missing assets are ignored."""
+        try:
+            if sys.platform == "win32" and APP_ICON_ICO.is_file():
+                self.iconbitmap(default=str(APP_ICON_ICO))
+            if APP_ICON_PNG.is_file():
+                photo = tk.PhotoImage(file=str(APP_ICON_PNG))
+                self._icon_images.append(photo)
+                self.iconphoto(True, photo)
+        except Exception:  # noqa: BLE001 — icon must never block startup
+            pass
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
@@ -109,13 +128,19 @@ class App(ctk.CTk):
         mode.set("Merge")
         mode.grid(row=0, column=1, sticky="w", padx=(12, 0))
         self._mode_button = mode
+        ctk.CTkLabel(
+            header,
+            text="* obligatorio",
+            text_color="gray60",
+            font=ctk.CTkFont(size=12),
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # Source folder
         folder_frame = ctk.CTkFrame(self)
         folder_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=8)
         folder_frame.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(folder_frame, text="Carpeta GS*.360").grid(
+        ctk.CTkLabel(folder_frame, text="Carpeta GS*.360 *").grid(
             row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 4)
         )
         self.folder_var = ctk.StringVar(value="")
@@ -145,7 +170,7 @@ class App(ctk.CTk):
         blocks_header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             blocks_header,
-            text="Bloques / capítulos",
+            text="Bloques / capítulos *",
             font=ctk.CTkFont(size=14, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
@@ -176,7 +201,9 @@ class App(ctk.CTk):
         opts.grid(row=3, column=0, sticky="ew", padx=16, pady=8)
         opts.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(opts, text="Salida").grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
+        ctk.CTkLabel(opts, text="Salida *").grid(
+            row=0, column=0, sticky="w", padx=12, pady=(10, 4)
+        )
         self.output_var = ctk.StringVar(value="")
         ctk.CTkEntry(opts, textvariable=self.output_var).grid(
             row=1, column=0, columnspan=2, sticky="ew", padx=(12, 8), pady=(0, 8)
@@ -188,12 +215,10 @@ class App(ctk.CTk):
             command=self._pick_output,
         ).grid(row=1, column=2, padx=(0, 12), pady=(0, 8))
 
-        ctk.CTkLabel(opts, text="Inicio (hh:mm:ss)").grid(
-            row=2, column=0, sticky="w", padx=12, pady=(4, 0)
-        )
-        ctk.CTkLabel(opts, text="Fin (hh:mm:ss)").grid(
-            row=2, column=1, sticky="w", padx=12, pady=(4, 0)
-        )
+        self.start_label = ctk.CTkLabel(opts, text="Inicio (hh:mm:ss) · opcional")
+        self.start_label.grid(row=2, column=0, sticky="w", padx=12, pady=(4, 0))
+        self.end_label = ctk.CTkLabel(opts, text="Fin (hh:mm:ss) · opcional")
+        self.end_label.grid(row=2, column=1, sticky="w", padx=12, pady=(4, 0))
         self.start_var = ctk.StringVar(value="")
         self.end_var = ctk.StringVar(value="")
         ctk.CTkEntry(opts, textvariable=self.start_var, placeholder_text="vacío = 0").grid(
@@ -255,12 +280,16 @@ class App(ctk.CTk):
         if value == "Crop":
             self.mode_var.set("crop")
             self.run_button.configure(text="Ejecutar crop")
+            self.start_label.configure(text="Inicio (hh:mm:ss) *")
+            self.end_label.configure(text="Fin (hh:mm:ss) *")
             self.trim_hint.configure(
-                text="Crop: indica inicio y/o fin (obligatorio). Salida: final_<id>_crop.360."
+                text="Crop: indica inicio y/o fin (al menos uno). Salida: final_<id>_crop.360."
             )
         else:
             self.mode_var.set("merge")
             self.run_button.configure(text="Ejecutar merge")
+            self.start_label.configure(text="Inicio (hh:mm:ss) · opcional")
+            self.end_label.configure(text="Fin (hh:mm:ss) · opcional")
             self.trim_hint.configure(
                 text="Merge: deja vacío para la grabación completa. Recorte ±1 s (keyframes)."
             )

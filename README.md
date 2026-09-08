@@ -48,6 +48,28 @@ gopro-360-gui
 gopro-360-merge gui
 ```
 
+### App icon launchers
+
+| Platform | How |
+|----------|-----|
+| macOS | Open `Gopro360Merge.app` (Dock uses `AppIcon.icns`) |
+| Windows | `gui.bat` / `gui.ps1` also refreshes `Gopro360Merge.lnk` with the `.ico` |
+| Linux | `./gui.sh` installs `~/.local/share/applications/gopro-360-gui.desktop` |
+
+### Changing the icon
+
+Edit the master SVG, then rebuild derivatives:
+
+```bash
+# edit source
+# src/gopro_360_merge/assets/app_icon.svg
+
+# Prefer system rsvg-convert (e.g. brew install librsvg), or:
+pip install -e ".[icons]"   # needs Cairo if no rsvg-convert
+python scripts/build_icons.py
+```
+
+This regenerates `app_icon.png`, `app_icon.ico`, and on macOS `AppIcon.icns` (copied into `Gopro360Merge.app`). Commit the generated files so end users do not need Cairo/rsvg.
 ## CLI Usage
 
 ```bash
