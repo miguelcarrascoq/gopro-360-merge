@@ -14,7 +14,7 @@ function Die([string]$Message) {
 }
 
 function Info([string]$Message) {
-    Write-Host "→ $Message"
+    Write-Host "> $Message"
 }
 
 function Get-SystemPython {
@@ -29,7 +29,7 @@ function Get-SystemPython {
     if (Get-Command python -ErrorAction SilentlyContinue) {
         return @{ Exe = "python"; Args = @() }
     }
-    Die "Python 3.11+ is required. Install Python and retry."
+    Die "Se requiere Python 3.11+. Instala Python e intentalo de nuevo."
 }
 
 function Require-Python {
@@ -37,24 +37,24 @@ function Require-Python {
     $verArgs = $py.Args + @("-c", "import sys; print('%d.%d' % sys.version_info[:2])")
     $ver = & $py.Exe @verArgs
     if ($LASTEXITCODE -ne 0) {
-        Die "Python 3.11+ is required. Install Python and retry."
+        Die "Se requiere Python 3.11+. Instala Python e intentalo de nuevo."
     }
     $parts = $ver.Trim().Split(".")
     $major = [int]$parts[0]
     $minor = [int]$parts[1]
     if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 11)) {
-        Die "Python 3.11+ is required (found $ver)."
+        Die "Se requiere Python 3.11+ (encontrado $ver)."
     }
     return $py
 }
 
 function Ensure-Venv($SystemPython) {
     if (-not (Test-Path $VenvPython)) {
-        Info "Creating virtualenv at .venv"
+        Info "Creando entorno virtual en .venv"
         $venvArgs = $SystemPython.Args + @("-m", "venv", $Venv)
         & $SystemPython.Exe @venvArgs
         if ($LASTEXITCODE -ne 0) {
-            Die "Failed to create virtualenv."
+            Die "No se pudo crear el entorno virtual."
         }
     }
 }
@@ -68,10 +68,10 @@ function Ensure-Package {
         }
     }
     if ($needInstall) {
-        Info "Installing gopro-360-merge into .venv"
+        Info "Instalando gopro-360-merge en .venv"
         & $VenvPython -m pip install -q -e .
         if ($LASTEXITCODE -ne 0) {
-            Die "pip install failed."
+            Die "Fallo la instalacion con pip."
         }
     }
 }
@@ -100,7 +100,7 @@ function Ensure-Ffmpeg {
     }
 
     if (Test-OnPath "winget") {
-        Info "Installing ffmpeg via winget (missing: $($missing -join ', '))"
+        Info "Instalando ffmpeg con winget (faltan: $($missing -join ', '))"
         & winget install --id Gyan.FFmpeg -e --accept-package-agreements --accept-source-agreements
         $wingetExit = $LASTEXITCODE
         Refresh-Path
@@ -109,12 +109,12 @@ function Ensure-Ffmpeg {
             return
         }
         if ($wingetExit -ne 0) {
-            Die "winget install of ffmpeg failed. Install manually from https://ffmpeg.org"
+            Die "Fallo la instalacion de ffmpeg con winget. Instala manualmente desde https://ffmpeg.org"
         }
-        Die "ffmpeg installed but not on PATH yet. Open a new terminal and retry."
+        Die "ffmpeg instalado pero aun no esta en PATH. Abre una terminal nueva e intentalo de nuevo."
     }
 
-    Die "Missing required tools: $($missing -join ', '). Install ffmpeg (includes ffprobe), e.g. winget install Gyan.FFmpeg"
+    Die "Faltan herramientas: $($missing -join ', '). Instala ffmpeg (incluye ffprobe), p. ej. winget install Gyan.FFmpeg"
 }
 
 function Ensure-Shortcut {
@@ -135,7 +135,7 @@ function Ensure-Shortcut {
         $shortcut.IconLocation = "$ico,0"
         $shortcut.Description = "GoPro 360 Merge"
         $shortcut.Save()
-        Info "Shortcut updated: Gopro360Merge.lnk"
+        Info "Acceso directo actualizado: Gopro360Merge.lnk"
     } catch {
         # Shortcut is optional; continue launching the GUI.
     }
@@ -148,6 +148,6 @@ Ensure-Ffmpeg
 Ensure-Shortcut
 
 Write-Host ""
-Info "Opening GUI…"
+Info "Abriendo GUI..."
 & $VenvGui
 exit $LASTEXITCODE
