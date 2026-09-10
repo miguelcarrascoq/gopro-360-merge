@@ -105,18 +105,18 @@ ensure_ffmpeg
 echo
 if [[ -n "$DIR_ARG" ]]; then
   DIR="$(resolve_directory "$DIR_ARG")"
-  echo "Carpeta: $DIR"
-  if ! confirm_yes "Usar esta carpeta?"; then
-    echo "Cancelado."
+  echo "Folder: $DIR"
+  if ! confirm_yes "Use this folder?"; then
+    echo "Cancelled."
     exit 0
   fi
 else
-  read -r -p "Carpeta con archivos .360 [.]: " input || true
+  read -r -p "Folder with .360 files [.]: " input || true
   input="${input:-.}"
   DIR="$(resolve_directory "$input")"
-  echo "Carpeta: $DIR"
-  if ! confirm_yes "Usar esta carpeta?"; then
-    echo "Cancelado."
+  echo "Folder: $DIR"
+  if ! confirm_yes "Use this folder?"; then
+    echo "Cancelled."
     exit 0
   fi
 fi

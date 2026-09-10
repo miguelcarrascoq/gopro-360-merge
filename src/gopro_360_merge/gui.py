@@ -39,12 +39,12 @@ def _set_windows_app_user_model_id() -> None:
         pass
 
 
-STAGE_LABELS_ES = {
-    "probe": "Calculando duración",
-    "join": "Uniendo capítulos",
-    "ffmpeg": "Uniendo capítulos",
-    "udtacopy": "Copiando metadatos udta",
-    "rename": "Renombrando a .360",
+STAGE_LABELS = {
+    "probe": "Estimating duration",
+    "join": "Joining chapters",
+    "ffmpeg": "Joining chapters",
+    "udtacopy": "Copying udta metadata",
+    "rename": "Renaming to .360",
 }
 
 
@@ -57,7 +57,7 @@ def format_size(num_bytes: int) -> str:
 
 
 def stage_progress(stage: str, current: float, total: float) -> tuple[float, str]:
-    labels = STAGE_LABELS_ES
+    labels = STAGE_LABELS
     stage_base = {
         "probe": 0.0,
         "join": 5.0,
@@ -134,7 +134,7 @@ class App(ctk.CTk):
         # --- Folder ---
         folder = self._section(0, pady=(12, 6))
         folder.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(folder, text="Carpeta GS*.360 *").grid(
+        ctk.CTkLabel(folder, text="GS*.360 folder *").grid(
             row=0, column=0, columnspan=4, sticky="w", padx=8, pady=(6, 2)
         )
         self.folder_var = ctk.StringVar(value="")
@@ -146,14 +146,14 @@ class App(ctk.CTk):
         )
         ctk.CTkButton(
             folder,
-            text="Elegir…",
+            text="Browse…",
             width=88,
             height=28,
             command=self._pick_folder,
         ).grid(row=1, column=2, padx=(0, 4), pady=(0, 8))
         ctk.CTkButton(
             folder,
-            text="Escanear",
+            text="Scan",
             width=88,
             height=28,
             command=self._scan_folder,
@@ -166,19 +166,19 @@ class App(ctk.CTk):
         blocks_header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             blocks_header,
-            text="Bloques / capítulos *",
+            text="Blocks / chapters *",
             font=ctk.CTkFont(size=13, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
             blocks_header,
-            text="Todos",
+            text="All",
             width=64,
             height=26,
             command=self._select_all,
         ).grid(row=0, column=1, padx=(4, 2))
         ctk.CTkButton(
             blocks_header,
-            text="Ninguno",
+            text="None",
             width=72,
             height=26,
             command=self._select_none,
@@ -191,7 +191,7 @@ class App(ctk.CTk):
         self.blocks_list.grid_columnconfigure(0, weight=1)
         self._blocks_placeholder = ctk.CTkLabel(
             self.blocks_list,
-            text="Sin bloques — elige carpeta y escanea.",
+            text="No blocks — pick a folder and scan.",
             text_color="gray60",
             font=ctk.CTkFont(size=12),
         )
@@ -200,7 +200,7 @@ class App(ctk.CTk):
         # --- Output + run ---
         opts = self._section(2, pady=(0, 6))
         opts.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(opts, text="Salida *").grid(
+        ctk.CTkLabel(opts, text="Output *").grid(
             row=0, column=0, columnspan=3, sticky="w", padx=8, pady=(6, 2)
         )
         self.output_var = ctk.StringVar(value="")
@@ -217,7 +217,7 @@ class App(ctk.CTk):
 
         self.duration_label = ctk.CTkLabel(
             opts,
-            text="Duración: —",
+            text="Duration: —",
             text_color="gray70",
             font=ctk.CTkFont(size=12),
         )
@@ -226,7 +226,7 @@ class App(ctk.CTk):
         )
         self.run_button = ctk.CTkButton(
             opts,
-            text="Ejecutar merge",
+            text="Run merge",
             height=32,
             command=self._run,
         )
@@ -238,7 +238,7 @@ class App(ctk.CTk):
         bottom = self._section(3, pady=(0, 12))
         self.status_label = ctk.CTkLabel(
             bottom,
-            text="Elige una carpeta y pulsa Escanear.",
+            text="Choose a folder and click Scan.",
             anchor="w",
             font=ctk.CTkFont(size=12),
         )
@@ -260,22 +260,22 @@ class App(ctk.CTk):
         if not self._blocks:
             folder = self.folder_var.get().strip()
             if not folder:
-                self._set_status("Elige una carpeta y pulsa Escanear.")
+                self._set_status("Choose a folder and click Scan.")
             else:
                 self._set_status(
-                    "Sin bloques detectados. Elige otra carpeta o vuelve a escanear."
+                    "No blocks found. Choose another folder or scan again."
                 )
             return
         selected = self._selected_blocks()
         if not selected:
-            self._set_status("Selecciona uno o más bloques.")
+            self._set_status("Select one or more blocks.")
             return
         if not self.output_var.get().strip():
-            self._set_status("Indica la carpeta de salida.")
+            self._set_status("Set the output folder.")
             return
         n = len(selected)
-        noun = "bloque" if n == 1 else "bloques"
-        self._set_status(f"Listo para merge ({n} {noun}).")
+        noun = "block" if n == 1 else "blocks"
+        self._set_status(f"Ready to merge ({n} {noun}).")
 
     def _log(self, message: str) -> None:
         self.log_box.configure(state="normal")
@@ -289,14 +289,14 @@ class App(ctk.CTk):
         self.run_button.configure(state=state)
 
     def _pick_folder(self) -> None:
-        path = filedialog.askdirectory(title="Carpeta con archivos GS*.360")
+        path = filedialog.askdirectory(title="Folder with GS*.360 files")
         if path:
             self.folder_var.set(path)
             self.output_var.set(str(Path(path) / "merged"))
             self._scan_folder()
 
     def _pick_output(self) -> None:
-        path = filedialog.askdirectory(title="Carpeta de salida")
+        path = filedialog.askdirectory(title="Output folder")
         if path:
             self.output_var.set(path)
             self._refresh_idle_status()
@@ -309,20 +309,20 @@ class App(ctk.CTk):
     def _scan_folder(self) -> None:
         raw = self.folder_var.get().strip()
         if not raw:
-            messagebox.showwarning("Carpeta", "Elige una carpeta con archivos GS*.360.")
+            messagebox.showwarning("Folder", "Choose a folder with GS*.360 files.")
             self._refresh_idle_status()
             return
         source = Path(raw).expanduser().resolve()
         if not source.is_dir():
-            messagebox.showerror("Carpeta", f"No es un directorio:\n{source}")
+            messagebox.showerror("Folder", f"Not a directory:\n{source}")
             self._refresh_idle_status()
             return
 
-        self._set_status("Escaneando…")
+        self._set_status("Scanning…")
         try:
             blocks = scan_directory(source)
         except NotADirectoryError as exc:
-            messagebox.showerror("Carpeta", str(exc))
+            messagebox.showerror("Folder", str(exc))
             self._refresh_idle_status()
             return
 
@@ -336,12 +336,12 @@ class App(ctk.CTk):
         if not blocks:
             ctk.CTkLabel(
                 self.blocks_list,
-                text=f"No se encontraron GS*.360 en {source}",
+                text=f"No GS*.360 files found in {source}",
                 text_color="orange",
                 font=ctk.CTkFont(size=12),
             ).grid(row=0, column=0, sticky="w", padx=2, pady=2)
-            self.duration_label.configure(text="Duración: —")
-            self._log(f"Sin bloques en {source}")
+            self.duration_label.configure(text="Duration: —")
+            self._log(f"No blocks in {source}")
             self._refresh_idle_status()
             self.after_idle(self._fit_window)
             return
@@ -362,7 +362,7 @@ class App(ctk.CTk):
             )
             cb.grid(row=i, column=0, sticky="ew", padx=2, pady=1)
 
-        self._log(f"Detectados {len(blocks)} bloque(s) en {source}")
+        self._log(f"Detected {len(blocks)} block(s) in {source}")
         self._on_selection_change()
         self.after_idle(self._fit_window)
 
@@ -386,7 +386,7 @@ class App(ctk.CTk):
     def _on_selection_change(self) -> None:
         selected = self._selected_blocks()
         if not selected:
-            self.duration_label.configure(text="Duración: — (ningún bloque seleccionado)")
+            self.duration_label.configure(text="Duration: — (no block selected)")
             self._refresh_idle_status()
             return
 
@@ -396,8 +396,8 @@ class App(ctk.CTk):
             self._refresh_idle_status()
             return
 
-        self.duration_label.configure(text="Duración: calculando…")
-        self._set_status("Calculando duración…")
+        self.duration_label.configure(text="Duration: estimating…")
+        self._set_status("Estimating duration…")
         ids = [b.block_id for b in missing]
 
         def worker() -> None:
@@ -420,7 +420,7 @@ class App(ctk.CTk):
                 parts.append(f"#{block.block_id}: …")
             else:
                 parts.append(f"#{block.block_id}: {format_timecode(total)}")
-        self.duration_label.configure(text="Duración: " + "  |  ".join(parts))
+        self.duration_label.configure(text="Duration: " + "  |  ".join(parts))
 
     def _run(self) -> None:
         if self._busy:
@@ -428,42 +428,42 @@ class App(ctk.CTk):
 
         selected = self._selected_blocks()
         if not selected:
-            messagebox.showwarning("Bloques", "Selecciona al menos un bloque.")
+            messagebox.showwarning("Blocks", "Select at least one block.")
             return
 
         out_raw = self.output_var.get().strip()
         if not out_raw:
-            messagebox.showwarning("Salida", "Indica la carpeta de salida.")
+            messagebox.showwarning("Output", "Set the output folder.")
             return
         output_dir = Path(out_raw).expanduser().resolve()
 
         missing = require_tools()
         if missing:
             messagebox.showerror(
-                "Dependencias",
-                "Faltan herramientas: " + ", ".join(missing) + "\n\n"
-                "Instala ffmpeg (incluye ffprobe).",
+                "Dependencies",
+                "Missing tools: " + ", ".join(missing) + "\n\n"
+                "Install ffmpeg (includes ffprobe).",
             )
             return
 
-        summary_lines = [f"Se va a merge {len(selected)} bloque(s) → {output_dir}"]
+        summary_lines = [f"Will merge {len(selected)} block(s) → {output_dir}"]
         for block in selected:
             summary_lines.append(f"  • {block.block_id}")
 
-        if not messagebox.askokcancel("Confirmar", "\n".join(summary_lines)):
+        if not messagebox.askokcancel("Confirm", "\n".join(summary_lines)):
             return
 
         self._set_busy(True)
         self.progress.set(0)
-        self._set_status("Iniciando merge…")
+        self._set_status("Starting merge…")
         self._log("---")
-        self._log(f"Iniciando merge de {len(selected)} bloque(s)")
+        self._log(f"Starting merge of {len(selected)} block(s)")
 
         def worker() -> None:
             failures = 0
             for index, block in enumerate(selected):
                 self._event_queue.put(
-                    ("status", f"Bloque {block.block_id} ({index + 1}/{len(selected)})…")
+                    ("status", f"Block {block.block_id} ({index + 1}/{len(selected)})…")
                 )
 
                 def on_stage(
@@ -482,12 +482,12 @@ class App(ctk.CTk):
                 try:
                     out = merge_block(block, output_dir, on_stage=on_stage)
                     self._event_queue.put(
-                        ("log", f"✓ Bloque {block.block_id} → {out}")
+                        ("log", f"✓ Block {block.block_id} → {out}")
                     )
                 except Exception as exc:  # noqa: BLE001
                     failures += 1
                     self._event_queue.put(
-                        ("log", f"✗ Bloque {block.block_id}: {exc}")
+                        ("log", f"✗ Block {block.block_id}: {exc}")
                     )
 
             self._event_queue.put(("done", failures, len(selected)))
@@ -503,7 +503,7 @@ class App(ctk.CTk):
                     _, results, errors, _ids = event
                     self._durations.update(results)
                     for err in errors:
-                        self._log(f"Duración: {err}")
+                        self._log(f"Duration: {err}")
                     self._update_duration_label(self._selected_blocks())
                     self._refresh_idle_status()
                 elif kind == "status":
@@ -519,19 +519,19 @@ class App(ctk.CTk):
                     self._set_busy(False)
                     if failures:
                         self.progress.set(1.0)
-                        self._set_status(f"Terminado con {failures} error(es).")
-                        self._log(f"Finalizado con {failures}/{total} fallos.")
+                        self._set_status(f"Finished with {failures} error(s).")
+                        self._log(f"Finished with {failures}/{total} failure(s).")
                         messagebox.showwarning(
-                            "Resultado",
-                            f"Terminado con {failures} fallo(s) de {total}.",
+                            "Result",
+                            f"Finished with {failures} failure(s) out of {total}.",
                         )
                     else:
                         self.progress.set(1.0)
-                        self._set_status(f"Merge completado ({total} bloque(s)).")
-                        self._log("Todos los bloques procesados correctamente.")
+                        self._set_status(f"Merge completed ({total} block(s)).")
+                        self._log("All blocks processed successfully.")
                         messagebox.showinfo(
-                            "Resultado",
-                            f"{total} bloque(s) procesados correctamente.",
+                            "Result",
+                            f"{total} block(s) processed successfully.",
                         )
         except queue.Empty:
             pass
