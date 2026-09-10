@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gopro-360-merge"
 dynamic = ["version"]
-description = "Interactive CLI to merge chaptered GoPro .360 files by recording block"
+description = "Merge chaptered GoPro .360 files by recording block — interactive CLI and desktop GUI"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
