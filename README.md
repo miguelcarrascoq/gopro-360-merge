@@ -53,7 +53,7 @@ gopro-360-merge gui
 | Platform | How |
 |----------|-----|
 | macOS | Open `Gopro360Merge.app` (Dock uses `AppIcon.icns`) |
-| Windows | `gui.bat` / `gui.ps1` also refreshes `Gopro360Merge.lnk` with the `.ico` |
+| Windows | `gui.bat` / `gui.ps1` refreshes `Gopro360Merge.lnk` with the `.ico`; the taskbar icon uses AppUserModelID `com.gopro360merge.gui` plus the window `.ico` |
 | Linux | `./gui.sh` installs `~/.local/share/applications/gopro-360-gui.desktop` |
 
 ### Changing the icon

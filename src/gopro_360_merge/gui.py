@@ -23,6 +23,21 @@ from gopro_360_merge.merge import (
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 APP_ICON_PNG = ASSETS_DIR / "app_icon.png"
 APP_ICON_ICO = ASSETS_DIR / "app_icon.ico"
+# Must match System.AppUserModel.ID stamped on Gopro360Merge.lnk (gui.ps1).
+APP_USER_MODEL_ID = "com.gopro360merge.gui"
+
+
+def _set_windows_app_user_model_id() -> None:
+    """Identify this process to the Windows taskbar (before any Tk window)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:  # noqa: BLE001 — identity is best-effort
+        pass
+
 
 STAGE_LABELS_ES = {
     "probe": "Calculando duración",
@@ -88,7 +103,9 @@ class App(ctk.CTk):
         """Set window / taskbar icon; missing assets are ignored."""
         try:
             if sys.platform == "win32" and APP_ICON_ICO.is_file():
-                self.iconbitmap(default=str(APP_ICON_ICO))
+                ico = str(APP_ICON_ICO)
+                self.iconbitmap(ico)
+                self.iconbitmap(default=ico)
             if APP_ICON_PNG.is_file():
                 photo = tk.PhotoImage(file=str(APP_ICON_PNG))
                 self._icon_images.append(photo)
@@ -522,6 +539,7 @@ class App(ctk.CTk):
 
 
 def main() -> int:
+    _set_windows_app_user_model_id()
     app = App()
     app.mainloop()
     return 0

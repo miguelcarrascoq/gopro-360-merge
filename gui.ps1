@@ -117,6 +117,101 @@ function Ensure-Ffmpeg {
     Die "Faltan herramientas: $($missing -join ', '). Instala ffmpeg (incluye ffprobe), p. ej. winget install Gyan.FFmpeg"
 }
 
+# Must match APP_USER_MODEL_ID in gopro_360_merge.gui
+$AppUserModelId = "com.gopro360merge.gui"
+
+function Set-ShortcutAppUserModelId {
+    param(
+        [Parameter(Mandatory = $true)][string]$LnkPath,
+        [Parameter(Mandatory = $true)][string]$AppId
+    )
+    if (-not ("Gopro360Merge.ShortcutAumid" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+
+namespace Gopro360Merge {
+    public static class ShortcutAumid {
+        [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+        private class CShellLink { }
+
+        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+        private interface IShellLinkW {
+            void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszFile, int cchMaxPath, IntPtr pfd, int fFlags);
+            void GetIDList(out IntPtr ppidl);
+            void SetIDList(IntPtr pidl);
+            void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszName, int cchMaxName);
+            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+            void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszDir, int cchMaxPath);
+            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+            void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszArgs, int cchMaxArgs);
+            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+            void GetHotkey(out short pwHotkey);
+            void SetHotkey(short wHotkey);
+            void GetShowCmd(out int piShowCmd);
+            void SetShowCmd(int iShowCmd);
+            void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszIconPath, int cchIconPath, out int piIcon);
+            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
+            void Resolve(IntPtr hwnd, int fFlags);
+            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+        }
+
+        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+        private interface IPropertyStore {
+            uint GetCount(out uint cProps);
+            uint GetAt(uint iProp, out PropertyKey pkey);
+            uint GetValue(ref PropertyKey key, [Out] PropVariant pv);
+            uint SetValue(ref PropertyKey key, PropVariant pv);
+            uint Commit();
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        private struct PropertyKey {
+            public Guid fmtid;
+            public int pid;
+            public PropertyKey(Guid fmtid, int pid) { this.fmtid = fmtid; this.pid = pid; }
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private sealed class PropVariant : IDisposable {
+            [FieldOffset(0)] ushort vt;
+            [FieldOffset(8)] IntPtr ptr;
+            public PropVariant(string value) {
+                vt = 31; // VT_LPWSTR
+                ptr = Marshal.StringToCoTaskMemUni(value);
+            }
+            public void Dispose() {
+                PropVariantClear(this);
+                GC.SuppressFinalize(this);
+            }
+            ~PropVariant() { Dispose(); }
+        }
+
+        [DllImport("ole32.dll")]
+        private static extern int PropVariantClear([In, Out] PropVariant pvar);
+
+        public static void Set(string lnkPath, string appId) {
+            var link = (IShellLinkW)new CShellLink();
+            var file = (IPersistFile)link;
+            file.Load(lnkPath, 2); // STGM_READWRITE
+            var store = (IPropertyStore)link;
+            var key = new PropertyKey(new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5);
+            using (var pv = new PropVariant(appId)) {
+                if (store.SetValue(ref key, pv) > 1) throw new InvalidOperationException("SetValue failed");
+                if (store.Commit() > 1) throw new InvalidOperationException("Commit failed");
+            }
+            file.Save(lnkPath, true);
+            Marshal.FinalReleaseComObject(link);
+        }
+    }
+}
+"@
+    }
+    [Gopro360Merge.ShortcutAumid]::Set($LnkPath, $AppId)
+}
+
 function Ensure-Shortcut {
     $ico = Join-Path $ScriptDir "src\gopro_360_merge\assets\app_icon.ico"
     $bat = Join-Path $ScriptDir "gui.bat"
@@ -135,6 +230,7 @@ function Ensure-Shortcut {
         $shortcut.IconLocation = "$ico,0"
         $shortcut.Description = "GoPro 360 Merge"
         $shortcut.Save()
+        Set-ShortcutAppUserModelId -LnkPath $lnk -AppId $AppUserModelId
         Info "Acceso directo actualizado: Gopro360Merge.lnk"
     } catch {
         # Shortcut is optional; continue launching the GUI.
