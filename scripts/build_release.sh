@@ -19,8 +19,18 @@ get_version() {
 VERSION="$(get_version)"
 ARCH_RAW="$(uname -m)"
 case "$ARCH_RAW" in
-  arm64|aarch64) PLATFORM="macos-arm64"; MP4_ASSET="mp4_merge-mac-arm64" ;;
-  x86_64|amd64)  PLATFORM="macos-x64";   MP4_ASSET="mp4_merge-mac64" ;;
+  arm64|aarch64)
+    PLATFORM="macos-arm64"
+    MP4_ASSET="mp4_merge-mac-arm64"
+    FFMPEG_ASSET="ffmpeg-darwin-arm64"
+    FFPROBE_ASSET="ffprobe-darwin-arm64"
+    ;;
+  x86_64|amd64)
+    PLATFORM="macos-x64"
+    MP4_ASSET="mp4_merge-mac64"
+    FFMPEG_ASSET="ffmpeg-darwin-x64"
+    FFPROBE_ASSET="ffprobe-darwin-x64"
+    ;;
   *) echo "Unsupported arch: $ARCH_RAW" >&2; exit 1 ;;
 esac
 
@@ -33,8 +43,10 @@ STAGING="${DIST}/${ARTIFACT}"
 ZIP="${DIST}/${ARTIFACT}.zip"
 PYI_OUT="${DIST}/gopro360merge"
 
-FFMPEG_URL="https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
-FFPROBE_URL="https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip"
+# Static macOS builds (native arm64/x64). evermeet.cx redirects are unreliable.
+FFMPEG_BASE="https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1"
+FFMPEG_URL="${FFMPEG_BASE}/${FFMPEG_ASSET}.gz"
+FFPROBE_URL="${FFMPEG_BASE}/${FFPROBE_ASSET}.gz"
 MP4_URL="https://github.com/gyroflow/mp4-merge/releases/download/v0.1.11/${MP4_ASSET}"
 
 echo "Building ${ARTIFACT}"
@@ -49,30 +61,31 @@ fi
 "${VENV}/bin/python" -m pip install --upgrade pip wheel
 "${VENV}/bin/python" -m pip install -e "${ROOT}" pyinstaller
 
-# --- ffmpeg / ffprobe (static builds from evermeet.cx) ---
-FFMPEG_ZIP="${CACHE}/ffmpeg-mac.zip"
-FFPROBE_ZIP="${CACHE}/ffprobe-mac.zip"
-if [[ ! -f "$FFMPEG_ZIP" ]]; then
-  echo "Downloading ffmpeg..."
-  curl -fsSL -o "$FFMPEG_ZIP" "$FFMPEG_URL"
+# --- ffmpeg / ffprobe (static builds from eugeneware/ffmpeg-static) ---
+FFMPEG_GZ="${CACHE}/${FFMPEG_ASSET}.gz"
+FFPROBE_GZ="${CACHE}/${FFPROBE_ASSET}.gz"
+FFMPEG_DIR="${CACHE}/ffmpeg-mac"
+FFMPEG_BIN="${FFMPEG_DIR}/ffmpeg"
+FFPROBE_BIN="${FFMPEG_DIR}/ffprobe"
+
+if [[ ! -f "$FFMPEG_GZ" ]]; then
+  echo "Downloading ffmpeg (${FFMPEG_ASSET})..."
+  curl -fsSL -o "$FFMPEG_GZ" "$FFMPEG_URL"
 fi
-if [[ ! -f "$FFPROBE_ZIP" ]]; then
-  echo "Downloading ffprobe..."
-  curl -fsSL -o "$FFPROBE_ZIP" "$FFPROBE_URL"
+if [[ ! -f "$FFPROBE_GZ" ]]; then
+  echo "Downloading ffprobe (${FFPROBE_ASSET})..."
+  curl -fsSL -o "$FFPROBE_GZ" "$FFPROBE_URL"
 fi
 
-FFMPEG_DIR="${CACHE}/ffmpeg-mac"
 mkdir -p "$FFMPEG_DIR"
 if [[ ! -f "${FFMPEG_DIR}/.ok" ]]; then
   rm -rf "${FFMPEG_DIR:?}/"*
-  unzip -o -q "$FFMPEG_ZIP" -d "$FFMPEG_DIR"
-  unzip -o -q "$FFPROBE_ZIP" -d "$FFMPEG_DIR"
+  gunzip -c "$FFMPEG_GZ" > "$FFMPEG_BIN"
+  gunzip -c "$FFPROBE_GZ" > "$FFPROBE_BIN"
   touch "${FFMPEG_DIR}/.ok"
 fi
 
-FFMPEG_BIN="$(find "$FFMPEG_DIR" -type f -name ffmpeg | head -n 1)"
-FFPROBE_BIN="$(find "$FFMPEG_DIR" -type f -name ffprobe | head -n 1)"
-if [[ -z "$FFMPEG_BIN" || -z "$FFPROBE_BIN" ]]; then
+if [[ ! -f "$FFMPEG_BIN" || ! -f "$FFPROBE_BIN" ]]; then
   echo "ffmpeg/ffprobe not found after extract" >&2
   exit 1
 fi
