@@ -15,8 +15,13 @@ Download the latest zip from [GitHub Releases](https://github.com/miguelcarrasco
 
 **Windows:** unzip and run `gopro-360-gui.exe` (or `gopro-360-merge.exe` for the CLI). The archive is self-contained (`tools\` includes ffmpeg, ffprobe, and mp4-merge)—keep that folder next to the executables.
 
-**macOS:** same idea once a macOS zip is published (`gopro-360-gui` / `gopro-360-merge`). Gatekeeper may block the first run of unsigned binaries; use **System Settings → Privacy & Security → Open Anyway** if prompted.
+**macOS:** unzip and keep `_internal/` and `tools/` next to the binaries. **After any download from the internet**, Gatekeeper quarantines the folder and blocks `Python.framework` until you clear it—double-click `Open GUI.command`, or run:
 
+```bash
+xattr -cr /path/to/gopro-360-merge-*-macos-*
+```
+
+Then open `gopro-360-gui` (or right-click → **Open** / **Privacy & Security → Open Anyway**). Builds are ad-hoc signed, not Apple-notarized.
 ### Build a release zip locally
 
 ```powershell
@@ -39,7 +44,7 @@ Output: `dist/gopro-360-merge-<version>-windows-x64.zip` (or `…-macos-arm64` /
 - [`mp4-merge`](https://github.com/gyroflow/mp4-merge) — downloaded on first use when not bundled (keeps GoPro Player–compatible `.360` structure)
 - [`udtacopy`](https://gopro.github.io/labs/control/chapters/) — bundled fallback if mp4-merge is unavailable
 
-On macOS, Gatekeeper may block the first run of the bundled binary; use **System Settings → Privacy & Security → Open Anyway** if prompted.
+On macOS, after downloading a release zip, Gatekeeper may block the first run. Prefer right-click → **Open**, **Privacy & Security → Open Anyway**, or `xattr -cr` on the unzipped folder (see Releases above).
 
 ## Install
 

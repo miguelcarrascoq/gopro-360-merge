@@ -4,7 +4,9 @@
 #
 # Notes for a later machine:
 # - Produces dist/gopro-360-merge-<ver>-macos-arm64.zip or …-macos-x64.zip
-# - Code signing / notarization are out of scope here (Gatekeeper may block first run)
+# - Ad-hoc codesign after staging (required for PyInstaller onedir + Python.framework)
+# - Zip with -y so _internal/Python stays a symlink into Python.framework
+# - Apple notarization / Developer ID are out of scope (Gatekeeper may still prompt)
 # - The repo Gopro360Merge.app is a development Dock launcher, not this release artifact
 
 set -euo pipefail
@@ -129,11 +131,53 @@ chmod +x "${TOOLS}/ffmpeg" "${TOOLS}/ffprobe" "${TOOLS}/mp4_merge"
 cp "${ROOT}/LICENSE" "${STAGING}/LICENSE"
 cp "${ROOT}/src/gopro_360_merge/vendor/NOTICE" "${STAGING}/NOTICE"
 cp "${ROOT}/packaging/RELEASE_README.txt" "${STAGING}/README.txt"
+cp "${ROOT}/packaging/Open GUI.command" "${STAGING}/Open GUI.command"
+chmod +x "${STAGING}/Open GUI.command"
+
+# --- Ad-hoc codesign (inside-out) so Gatekeeper can load nested libs ---
+echo "Ad-hoc codesigning..."
+sign_adhoc() {
+  local path="$1"
+  # Prefer deep for bundles/frameworks; plain force for leaf binaries.
+  if [[ -d "$path" ]]; then
+    codesign --force --deep --sign - "$path" 2>/dev/null \
+      || codesign --force --sign - "$path"
+  else
+    codesign --force --sign - "$path"
+  fi
+}
+
+# Shared libs / extensions under _internal (skip symlinks; sign real targets)
+if [[ -d "${STAGING}/_internal" ]]; then
+  while IFS= read -r -d '' f; do
+    sign_adhoc "$f"
+  done < <(
+    find "${STAGING}/_internal" \( -type f -o -type l \) \( \
+      -name '*.dylib' -o -name '*.so' -o -name '*.so.*' \
+      \) -print0 2>/dev/null
+    find "${STAGING}/_internal" -type f \( \
+      -name 'Tcl' -o -name 'Tk' -o -name 'Python' \
+      \) -print0 2>/dev/null
+  )
+  if [[ -d "${STAGING}/_internal/Python.framework" ]]; then
+    sign_adhoc "${STAGING}/_internal/Python.framework"
+  fi
+fi
+
+for tool in ffmpeg ffprobe mp4_merge; do
+  if [[ -f "${STAGING}/tools/${tool}" ]]; then
+    sign_adhoc "${STAGING}/tools/${tool}"
+  fi
+done
+
+sign_adhoc "${STAGING}/gopro-360-merge"
+sign_adhoc "${STAGING}/gopro-360-gui"
 
 rm -f "$ZIP"
 (
   cd "$DIST"
-  zip -r -q "$(basename "$ZIP")" "$(basename "$STAGING")"
+  # -y: store symlinks as symlinks (critical for _internal/Python → framework)
+  zip -r -y -q "$(basename "$ZIP")" "$(basename "$STAGING")"
 )
 
 echo
