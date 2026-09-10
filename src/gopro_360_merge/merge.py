@@ -10,6 +10,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from gopro_360_merge.bundled_tools import find_bundled_binary
 from gopro_360_merge.detect import Block
 from gopro_360_merge.mp4_merge_tool import ensure_mp4_merge
 from gopro_360_merge.progress import FfmpegProgressTracker
@@ -19,23 +20,36 @@ ProgressCallback = Callable[[str, float, float], None]
 
 
 def which_or_none(name: str) -> str | None:
+    bundled = find_bundled_binary(name)
+    if bundled is not None:
+        return str(bundled)
     return shutil.which(name)
+
+
+def resolve_ffmpeg() -> str | None:
+    return which_or_none("ffmpeg")
+
+
+def resolve_ffprobe() -> str | None:
+    return which_or_none("ffprobe")
 
 
 def require_tools() -> list[str]:
     """Return names of missing required tools."""
     missing: list[str] = []
-    for tool in ("ffmpeg", "ffprobe"):
-        if which_or_none(tool) is None:
-            missing.append(tool)
+    if resolve_ffmpeg() is None:
+        missing.append("ffmpeg")
+    if resolve_ffprobe() is None:
+        missing.append("ffprobe")
     if ensure_udtacopy() is None:
         missing.append("udtacopy")
     return missing
 
 
 def probe_duration_seconds(path: Path) -> float:
+    ffprobe = resolve_ffprobe() or "ffprobe"
     cmd = [
-        "ffprobe",
+        ffprobe,
         "-v",
         "error",
         "-show_entries",
@@ -81,8 +95,9 @@ def write_filelist(block: Block, filelist_path: Path) -> Path:
 
 
 def probe_streams(path: Path) -> list[dict]:
+    ffprobe = resolve_ffprobe() or "ffprobe"
     cmd = [
-        "ffprobe",
+        ffprobe,
         "-v",
         "error",
         "-show_streams",
@@ -154,7 +169,7 @@ def run_ffmpeg_concat(
     # Both video tracks must be default/enabled; otherwise Player/MF ignores the
     # second lens and the merged file will not open as 360.
     cmd = [
-        "ffmpeg",
+        resolve_ffmpeg() or "ffmpeg",
         "-y",
         "-hide_banner",
         "-loglevel",

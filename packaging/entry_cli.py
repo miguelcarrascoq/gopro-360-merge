@@ -1,0 +1,6 @@
+"""PyInstaller entry for the interactive CLI."""
+
+from gopro_360_merge.cli import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

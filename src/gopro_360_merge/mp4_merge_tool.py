@@ -9,6 +9,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from gopro_360_merge.bundled_tools import find_bundled_binary
+
 _RELEASE = "v0.1.11"
 _RELEASE_BASE = (
     f"https://github.com/gyroflow/mp4-merge/releases/download/{_RELEASE}"
@@ -59,6 +61,10 @@ def _download(dest: Path) -> Path:
 
 
 def resolve_mp4_merge(*, prefer_path: bool = True) -> Path:
+    bundled = find_bundled_binary("mp4_merge")
+    if bundled is not None:
+        return bundled
+
     if prefer_path:
         found = shutil.which("mp4_merge") or shutil.which("mp4-merge")
         if found:

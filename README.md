@@ -9,11 +9,34 @@ GS011623.360  GS021623.360  …  GS051623.360   →  block 1623
 GS011624.360  GS021624.360  …  GS051624.360   →  block 1624
 ```
 
+## Releases (no Python install)
+
+Download the latest zip from [GitHub Releases](https://github.com/miguelcarrascoq/gopro-360-merge/releases).
+
+**Windows:** unzip and run `gopro-360-gui.exe` (or `gopro-360-merge.exe` for the CLI). The archive is self-contained (`tools\` includes ffmpeg, ffprobe, and mp4-merge)—keep that folder next to the executables.
+
+**macOS:** same idea once a macOS zip is published (`gopro-360-gui` / `gopro-360-merge`). Gatekeeper may block the first run of unsigned binaries; use **System Settings → Privacy & Security → Open Anyway** if prompted.
+
+### Build a release zip locally
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1
+```
+
+```bash
+# macOS (on a Mac)
+chmod +x scripts/build_release.sh
+./scripts/build_release.sh
+```
+
+Output: `dist/gopro-360-merge-<version>-windows-x64.zip` (or `…-macos-arm64` / `…-macos-x64`).
+
 ## Requirements
 
-- Python 3.11+
-- [ffmpeg](https://ffmpeg.org/) (includes `ffprobe`) — duration probing and ffmpeg concat fallback; e.g. `brew install ffmpeg` (macOS) or `winget install Gyan.FFmpeg` (Windows)
-- [`mp4-merge`](https://github.com/gyroflow/mp4-merge) — downloaded on first use (keeps GoPro Player–compatible `.360` structure)
+- Python 3.11+ (only when installing from source; not needed for the release zip)
+- [ffmpeg](https://ffmpeg.org/) (includes `ffprobe`) — duration probing and ffmpeg concat fallback; e.g. `brew install ffmpeg` (macOS) or `winget install Gyan.FFmpeg` (Windows). Bundled in release zips.
+- [`mp4-merge`](https://github.com/gyroflow/mp4-merge) — downloaded on first use when not bundled (keeps GoPro Player–compatible `.360` structure)
 - [`udtacopy`](https://gopro.github.io/labs/control/chapters/) — bundled fallback if mp4-merge is unavailable
 
 On macOS, Gatekeeper may block the first run of the bundled binary; use **System Settings → Privacy & Security → Open Anyway** if prompted.
