@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- GUI and bootstrap scripts use English labels/messages for a consistent cross-platform UX.
+- Windows release rebuild with the latest packaging and GUI changes (`gopro-360-merge-1.0.1-windows-x64.zip`).
+
 ## 1.0.0
 
 - First binary release for Windows (self-contained zip with GUI, CLI, ffmpeg, ffprobe, and mp4-merge).
