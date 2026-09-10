@@ -4,6 +4,7 @@
 
 - GUI and bootstrap scripts use English labels/messages for a consistent cross-platform UX.
 - Windows release rebuild with the latest packaging and GUI changes (`gopro-360-merge-1.0.1-windows-x64.zip`).
+- macOS Apple Silicon release as `Gopro360Merge.app`, signed with Developer ID (Servicios Globales Tecnologicos Limitada) and notarized (`gopro-360-merge-1.0.1-macos-arm64.zip`).
 
 ## 1.0.0
 

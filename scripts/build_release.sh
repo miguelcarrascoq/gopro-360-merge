@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # Build a self-contained macOS release zip for GitHub Releases.
-# Run on a Mac (not Windows):  ./scripts/build_release.sh
+# Run on a Mac:  ./scripts/build_release.sh
 #
-# Notes for a later machine:
-# - Produces dist/gopro-360-merge-<ver>-macos-arm64.zip or …-macos-x64.zip
-# - Ad-hoc codesign after staging (required for PyInstaller onedir + Python.framework)
-# - Zip with -y so _internal/Python stays a symlink into Python.framework
-# - Apple notarization / Developer ID are out of scope (Gatekeeper may still prompt)
-# - The repo Gopro360Merge.app is a development Dock launcher, not this release artifact
+# Produces dist/gopro-360-merge-<ver>-macos-arm64.zip (or …-macos-x64.zip) with:
+#   Gopro360Merge.app  (GUI + shared _internal + tools)
+#   gopro-360-merge    (CLI launcher into the .app)
+#
+# If Developer ID Application + App Store Connect API env vars are set, signs
+# with hardened runtime, notarizes via notarytool, and staples the .app.
+# Otherwise falls back to ad-hoc codesign (Gatekeeper may still require xattr).
+#
+# Env (for notarized builds):
+#   CODESIGN_IDENTITY          default: auto-detect Developer ID Application
+#   APP_STORE_CONNECT_KEY_ID
+#   APP_STORE_CONNECT_ISSUER_ID
+#   APP_STORE_CONNECT_KEY_PATH
 
 set -euo pipefail
 
@@ -44,14 +51,47 @@ BUILD="${ROOT}/build"
 STAGING="${DIST}/${ARTIFACT}"
 ZIP="${DIST}/${ARTIFACT}.zip"
 PYI_OUT="${DIST}/gopro360merge"
+APP="${STAGING}/Gopro360Merge.app"
+APP_MACOS="${APP}/Contents/MacOS"
+APP_RES="${APP}/Contents/Resources/app"
+ENTITLEMENTS="${ROOT}/packaging/macos/entitlements.plist"
 
-# Static macOS builds (native arm64/x64). evermeet.cx redirects are unreliable.
 FFMPEG_BASE="https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1"
 FFMPEG_URL="${FFMPEG_BASE}/${FFMPEG_ASSET}.gz"
 FFPROBE_URL="${FFMPEG_BASE}/${FFPROBE_ASSET}.gz"
 MP4_URL="https://github.com/gyroflow/mp4-merge/releases/download/v0.1.11/${MP4_ASSET}"
 
+detect_codesign_identity() {
+  if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    echo "$CODESIGN_IDENTITY"
+    return
+  fi
+  security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/.*"\(Developer ID Application: .*\)".*/\1/p' \
+    | head -n 1
+}
+
+CODESIGN_IDENTITY="$(detect_codesign_identity || true)"
+CAN_NOTARIZE=0
+if [[ -n "${CODESIGN_IDENTITY}" \
+   && -n "${APP_STORE_CONNECT_KEY_ID:-}" \
+   && -n "${APP_STORE_CONNECT_ISSUER_ID:-}" \
+   && -n "${APP_STORE_CONNECT_KEY_PATH:-}" \
+   && -f "${APP_STORE_CONNECT_KEY_PATH}" ]]; then
+  CAN_NOTARIZE=1
+fi
+
 echo "Building ${ARTIFACT}"
+if [[ -n "${CODESIGN_IDENTITY}" ]]; then
+  echo "  Codesign: ${CODESIGN_IDENTITY}"
+else
+  echo "  Codesign: ad-hoc (no Developer ID Application found)"
+fi
+if [[ "$CAN_NOTARIZE" -eq 1 ]]; then
+  echo "  Notarize: yes"
+else
+  echo "  Notarize: no (set APP_STORE_CONNECT_* env vars for notarization)"
+fi
 
 mkdir -p "$CACHE" "$DIST"
 
@@ -63,7 +103,7 @@ fi
 "${VENV}/bin/python" -m pip install --upgrade pip wheel
 "${VENV}/bin/python" -m pip install -e "${ROOT}" pyinstaller
 
-# --- ffmpeg / ffprobe (static builds from eugeneware/ffmpeg-static) ---
+# --- ffmpeg / ffprobe ---
 FFMPEG_GZ="${CACHE}/${FFMPEG_ASSET}.gz"
 FFPROBE_GZ="${CACHE}/${FFPROBE_ASSET}.gz"
 FFMPEG_DIR="${CACHE}/ffmpeg-mac"
@@ -93,7 +133,6 @@ if [[ ! -f "$FFMPEG_BIN" || ! -f "$FFPROBE_BIN" ]]; then
 fi
 chmod +x "$FFMPEG_BIN" "$FFPROBE_BIN"
 
-# --- mp4-merge ---
 MP4_CACHED="${CACHE}/mp4_merge"
 if [[ ! -f "$MP4_CACHED" ]]; then
   echo "Downloading mp4-merge (${MP4_ASSET})..."
@@ -116,17 +155,47 @@ if [[ ! -d "$PYI_OUT" ]]; then
   exit 1
 fi
 
-# --- Stage ---
+# --- Stage as .app (onedir lives in Resources; MacOS only has a launcher) ---
+# Apple requires Contents/MacOS to contain executables only; data under MacOS
+# breaks Developer ID codesign ("code object is not signed" on .svg/.icns).
+echo "Assembling Gopro360Merge.app..."
 rm -rf "$STAGING"
-mkdir -p "$STAGING"
-cp -R "${PYI_OUT}/." "$STAGING/"
+mkdir -p "${APP_MACOS}" "${APP_RES}" "${APP}/Contents/Resources"
 
-TOOLS="${STAGING}/tools"
-mkdir -p "$TOOLS"
-cp "$FFMPEG_BIN" "${TOOLS}/ffmpeg"
-cp "$FFPROBE_BIN" "${TOOLS}/ffprobe"
-cp "$MP4_CACHED" "${TOOLS}/mp4_merge"
-chmod +x "${TOOLS}/ffmpeg" "${TOOLS}/ffprobe" "${TOOLS}/mp4_merge"
+cp -a "${PYI_OUT}/." "${APP_RES}/"
+
+mkdir -p "${APP_RES}/tools"
+cp "$FFMPEG_BIN" "${APP_RES}/tools/ffmpeg"
+cp "$FFPROBE_BIN" "${APP_RES}/tools/ffprobe"
+cp "$MP4_CACHED" "${APP_RES}/tools/mp4_merge"
+chmod +x "${APP_RES}/tools/ffmpeg" "${APP_RES}/tools/ffprobe" "${APP_RES}/tools/mp4_merge"
+chmod +x "${APP_RES}/gopro-360-gui" "${APP_RES}/gopro-360-merge"
+
+ICNS_SRC="${ROOT}/src/gopro_360_merge/assets/AppIcon.icns"
+if [[ ! -f "$ICNS_SRC" ]]; then
+  ICNS_SRC="${ROOT}/Gopro360Merge.app/Contents/Resources/AppIcon.icns"
+fi
+if [[ -f "$ICNS_SRC" ]]; then
+  cp "$ICNS_SRC" "${APP}/Contents/Resources/AppIcon.icns"
+fi
+
+sed "s/__VERSION__/${VERSION}/g" \
+  "${ROOT}/packaging/macos/Info.plist.in" > "${APP}/Contents/Info.plist"
+
+cat > "${APP_MACOS}/Gopro360Merge" <<'EOF'
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")/../Resources/app" && pwd)"
+exec "$DIR/gopro-360-gui" "$@"
+EOF
+chmod +x "${APP_MACOS}/Gopro360Merge"
+
+# CLI wrapper at zip root
+cat > "${STAGING}/gopro-360-merge" <<'EOF'
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/Gopro360Merge.app/Contents/Resources/app/gopro-360-merge" "$@"
+EOF
+chmod +x "${STAGING}/gopro-360-merge"
 
 cp "${ROOT}/LICENSE" "${STAGING}/LICENSE"
 cp "${ROOT}/src/gopro_360_merge/vendor/NOTICE" "${STAGING}/NOTICE"
@@ -134,58 +203,108 @@ cp "${ROOT}/packaging/RELEASE_README.txt" "${STAGING}/README.txt"
 cp "${ROOT}/packaging/Open GUI.command" "${STAGING}/Open GUI.command"
 chmod +x "${STAGING}/Open GUI.command"
 
-# --- Ad-hoc codesign (inside-out) so Gatekeeper can load nested libs ---
-echo "Ad-hoc codesigning..."
-sign_adhoc() {
+# --- Codesign (inside-out) ---
+is_macho() {
   local path="$1"
-  # Prefer deep for bundles/frameworks; plain force for leaf binaries.
-  if [[ -d "$path" ]]; then
-    codesign --force --deep --sign - "$path" 2>/dev/null \
-      || codesign --force --sign - "$path"
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  file -b "$path" 2>/dev/null | grep -q 'Mach-O'
+}
+
+sign_one() {
+  local path="$1"
+  if [[ -n "${CODESIGN_IDENTITY}" ]]; then
+    codesign --force --options runtime --timestamp \
+      --entitlements "$ENTITLEMENTS" \
+      --sign "$CODESIGN_IDENTITY" \
+      "$path"
   else
-    codesign --force --sign - "$path"
+    if [[ -d "$path" ]]; then
+      codesign --force --deep --sign - "$path" 2>/dev/null \
+        || codesign --force --sign - "$path"
+    else
+      codesign --force --sign - "$path"
+    fi
   fi
 }
 
-# Shared libs / extensions under _internal (skip symlinks; sign real targets)
-if [[ -d "${STAGING}/_internal" ]]; then
+echo "Codesigning..."
+xattr -cr "$APP" 2>/dev/null || true
+
+if [[ -n "${CODESIGN_IDENTITY}" ]]; then
   while IFS= read -r -d '' f; do
-    sign_adhoc "$f"
-  done < <(
-    find "${STAGING}/_internal" \( -type f -o -type l \) \( \
-      -name '*.dylib' -o -name '*.so' -o -name '*.so.*' \
-      \) -print0 2>/dev/null
-    find "${STAGING}/_internal" -type f \( \
-      -name 'Tcl' -o -name 'Tk' -o -name 'Python' \
-      \) -print0 2>/dev/null
-  )
-  if [[ -d "${STAGING}/_internal/Python.framework" ]]; then
-    sign_adhoc "${STAGING}/_internal/Python.framework"
-  fi
+    is_macho "$f" || continue
+    codesign --remove-signature "$f" 2>/dev/null || true
+  done < <(find "$APP_RES" -type f -print0 2>/dev/null)
 fi
 
-for tool in ffmpeg ffprobe mp4_merge; do
-  if [[ -f "${STAGING}/tools/${tool}" ]]; then
-    sign_adhoc "${STAGING}/tools/${tool}"
+while IFS= read -r -d '' f; do
+  is_macho "$f" || continue
+  sign_one "$f"
+done < <(find "$APP_RES" -type f -print0 2>/dev/null)
+
+if [[ -d "${APP_RES}/_internal/Python.framework" ]]; then
+  sign_one "${APP_RES}/_internal/Python.framework"
+fi
+
+# Nested Mach-O inside vendor/udtacopy.zip must also be Developer ID signed
+# or Apple notary rejects the archive.
+UDTA_ZIP="$(find "${APP_RES}/_internal" -path '*/vendor/udtacopy.zip' -type f | head -n 1 || true)"
+if [[ -n "$UDTA_ZIP" && -f "$UDTA_ZIP" ]]; then
+  echo "Signing nested udtacopy in vendor zip..."
+  UDTA_TMP="$(mktemp -d)"
+  unzip -q "$UDTA_ZIP" -d "$UDTA_TMP"
+  if [[ -f "${UDTA_TMP}/mac/udtacopy" ]]; then
+    chmod +x "${UDTA_TMP}/mac/udtacopy"
+    sign_one "${UDTA_TMP}/mac/udtacopy"
   fi
-done
+  UDTA_ABS="$(cd "$(dirname "$UDTA_ZIP")" && pwd)/$(basename "$UDTA_ZIP")"
+  rm -f "$UDTA_ABS"
+  (
+    cd "$UDTA_TMP"
+    zip -r -q "$UDTA_ABS" .
+  )
+  rm -rf "$UDTA_TMP"
+fi
 
-sign_adhoc "${STAGING}/gopro-360-merge"
-sign_adhoc "${STAGING}/gopro-360-gui"
+sign_one "${APP_MACOS}/Gopro360Merge"
+sign_one "$APP"
 
-rm -f "$ZIP"
-(
-  cd "$DIST"
-  # -y: store symlinks as symlinks (critical for _internal/Python → framework)
-  zip -r -y -q "$(basename "$ZIP")" "$(basename "$STAGING")"
-)
+codesign --verify --deep --strict "$APP"
+echo "  codesign verify: OK"
+
+# --- Zip (preserve symlinks) ---
+make_zip() {
+  rm -f "$ZIP"
+  (
+    cd "$DIST"
+    zip -r -y -q "$(basename "$ZIP")" "$(basename "$STAGING")"
+  )
+}
+
+make_zip
+
+# --- Notarize + staple ---
+if [[ "$CAN_NOTARIZE" -eq 1 ]]; then
+  echo "Submitting to Apple notary service (this can take several minutes)..."
+  xcrun notarytool submit "$ZIP" \
+    --key "$APP_STORE_CONNECT_KEY_PATH" \
+    --key-id "$APP_STORE_CONNECT_KEY_ID" \
+    --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
+    --wait
+
+  echo "Stapling notarization ticket..."
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+
+  # Rebuild zip with stapled .app
+  make_zip
+  echo "  notarize + staple: OK"
+fi
 
 echo
 echo "Done."
 echo "  Folder: $STAGING"
 echo "  Zip:    $ZIP"
 echo
-echo "Publish (when ready):"
-echo "  git tag v${VERSION}"
-echo "  git push origin v${VERSION}"
-echo "  gh release create v${VERSION} \"$ZIP\" --title \"v${VERSION}\" --notes-file CHANGELOG.md"
+echo "Publish:"
+echo "  gh release upload v${VERSION} \"$ZIP\" --clobber"

@@ -1,28 +1,25 @@
 GoPro 360 Merge — release package
 
+macOS
+-----
+Open Gopro360Merge.app (double-click).
+
+CLI from Terminal (same folder):
+  ./gopro-360-merge
+
+Keep the unzipped folder intact (the .app embeds _internal/ and tools/).
+
+If Gatekeeper still blocks an unsigned/ad-hoc build after download:
+  xattr -cr /path/to/this/folder
+  open Gopro360Merge.app
+Or double-click Open GUI.command.
+
+Notarized Developer ID builds should open without xattr.
+
+Windows
+-------
 Run:
-  gopro-360-gui       Desktop GUI  (Windows: gopro-360-gui.exe)
-  gopro-360-merge     Interactive CLI  (Windows: gopro-360-merge.exe)
+  gopro-360-gui.exe       Desktop GUI
+  gopro-360-merge.exe     Interactive CLI
 
-This archive is self-contained: ffmpeg, ffprobe, and mp4-merge live in the
-tools/ folder next to the executables. Keep that folder beside the app files
-(and keep _internal/ next to them on macOS). Do not move the binaries out of
-this folder alone.
-
-Unzip anywhere and run. Python is not required.
-
-macOS — REQUIRED after download from the internet
--------------------------------------------------
-Chrome/Safari mark the unzipped folder as quarantined. Double-clicking
-gopro-360-gui then fails with "Python.framework Not Opened" until you clear
-that flag.
-
-Easiest: double-click  Open GUI.command  (allow it in Terminal / Privacy if
-macOS asks). That clears quarantine and starts the GUI.
-
-Or run once in Terminal (use your real folder path):
-
-  xattr -cr "/path/to/gopro-360-merge-*-macos-*"
-  open "/path/to/gopro-360-merge-*-macos-*/gopro-360-gui"
-
-These builds are ad-hoc signed, not Apple-notarized.
+Keep tools\ next to the executables. Python is not required.
