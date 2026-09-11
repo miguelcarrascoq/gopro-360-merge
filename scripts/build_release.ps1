@@ -35,12 +35,13 @@ New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
 # --- Python venv + deps ---
+# Prefer `python` first (GitHub Actions setup-python), then the Windows py launcher.
 $Py = $null
 foreach ($candidate in @(
+        @{ Cmd = "python"; Args = @() },
         @{ Cmd = "py"; Args = @("-3.12") },
         @{ Cmd = "py"; Args = @("-3.11") },
-        @{ Cmd = "py"; Args = @("-3") },
-        @{ Cmd = "python"; Args = @() }
+        @{ Cmd = "py"; Args = @("-3") }
     )) {
     try {
         $verArgs = $candidate.Args + @("-c", "import sys; print('%d.%d' % sys.version_info[:2])")

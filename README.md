@@ -15,11 +15,14 @@ Download the latest zip from [GitHub Releases](https://github.com/miguelcarrasco
 
 **Windows:** unzip and run `gopro-360-gui.exe` (or `gopro-360-merge.exe` for the CLI). The archive is self-contained (`tools\` includes ffmpeg, ffprobe, and mp4-merge)—keep that folder next to the executables.
 
+Official Windows builds are intended to be **Authenticode-signed for free** via [SignPath Foundation](https://signpath.org/) (open source). Until that pipeline is fully approved, SmartScreen may still warn on first run — choose **More info → Run anyway**. Setup notes: [docs/windows-code-signing.md](docs/windows-code-signing.md).
+
 **macOS:** unzip and open **Gopro360Merge.app**. Use `./gopro-360-merge` for the CLI. Notarized Developer ID builds should open after download without extra steps. If an older ad-hoc build is blocked, run `xattr -cr` on the folder or use `Open GUI.command`.
+
 ### Build a release zip locally
 
 ```powershell
-# Windows
+# Windows (unsigned local build)
 powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1
 ```
 
@@ -28,6 +31,8 @@ powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1
 chmod +x scripts/build_release.sh
 ./scripts/build_release.sh
 ```
+
+Signed Windows Releases: GitHub Actions workflow **Windows signed release** (see [docs/windows-code-signing.md](docs/windows-code-signing.md)).
 
 Output: `dist/gopro-360-merge-<version>-windows-x64.zip` (or `…-macos-arm64` / `…-macos-x64`).
 

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paste this into SignPath.io as the project's Artifact Configuration
+  (slug suggestion: windows-portable).
+
+  upload-artifact zips the staging folder, so the root element is zip-file.
+  Only our app EXEs (+ bundled mp4_merge) are Authenticode-signed.
+  ffmpeg/ffprobe stay as shipped by Gyan (already vendor-signed).
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="gopro-360-gui.exe">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="gopro-360-merge.exe">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="tools/mp4_merge.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

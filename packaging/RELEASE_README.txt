@@ -23,3 +23,7 @@ Run:
   gopro-360-merge.exe     Interactive CLI
 
 Keep tools\ next to the executables. Python is not required.
+
+Official releases may be Authenticode-signed via SignPath Foundation
+(publisher may show as "SignPath Foundation"). If SmartScreen warns on
+first launch: More info → Run anyway.

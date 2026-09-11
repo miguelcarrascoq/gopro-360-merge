@@ -1,0 +1,167 @@
+# Build a self-contained Windows x64 zip and optionally Authenticode-sign via SignPath.
+#
+# Triggers:
+#   - workflow_dispatch
+#   - push of tags matching v*
+#
+# Signing requires SignPath Foundation approval + repo secrets (see docs/windows-code-signing.md).
+# Without secrets, this still produces an unsigned zip artifact for smoke-testing CI.
+
+name: Windows signed release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build release zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1
+          $zip = Get-ChildItem -Path dist -Filter "gopro-360-merge-*-windows-x64.zip" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $zip) { throw "Release zip not found under dist/" }
+          $stage = Join-Path dist ($zip.BaseName)
+          if (-not (Test-Path $stage)) { throw "Staging folder missing: $stage" }
+          "ZIP_PATH=$($zip.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "STAGE_DIR=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "ARTIFACT_NAME=$($zip.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $ver = $null
+          $initText = Get-Content -Raw "src/gopro_360_merge/__init__.py"
+          if ($initText -match '__version__\s*=\s*"([^"]+)"') { $ver = $Matches[1] }
+          if (-not $ver) { throw "Could not parse __version__" }
+          "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RELEASE_ZIP=$($zip.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Built $($zip.FullName) (v$ver)"
+
+      - name: Upload unsigned staging folder for SignPath
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable-unsigned
+          path: ${{ env.STAGE_DIR }}
+          if-no-files-found: error
+
+      - name: Detect SignPath configuration
+        id: signpath-config
+        shell: pwsh
+        run: |
+          $token = "${{ secrets.SIGNPATH_API_TOKEN }}"
+          $org = "${{ secrets.SIGNPATH_ORGANIZATION_ID }}"
+          if (-not $org) { $org = "${{ vars.SIGNPATH_ORGANIZATION_ID }}" }
+          $project = "${{ vars.SIGNPATH_PROJECT_SLUG }}"
+          if (-not $project) { $project = "gopro-360-merge" }
+          $policy = "${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}"
+          if (-not $policy) { $policy = "test-signing" }
+          $artifactCfg = "${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}"
+          if (-not $artifactCfg) { $artifactCfg = "windows-portable" }
+
+          if (($token.Length -gt 0) -and ($org.Length -gt 0)) {
+            "enabled=true" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "organization_id=$org" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "project_slug=$project" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "signing_policy_slug=$policy" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "artifact_configuration_slug=$artifactCfg" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "SignPath signing enabled (project=$project policy=$policy)."
+          } else {
+            "enabled=false" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "SignPath secrets are not configured yet."
+            Write-Host "Build succeeded with an UNSIGNED artifact only."
+            Write-Host "Follow docs/windows-code-signing.md and apply at https://signpath.org/"
+          }
+
+      - name: Submit signing request to SignPath
+        if: steps.signpath-config.outputs.enabled == 'true'
+        id: sign
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ steps.signpath-config.outputs.organization_id }}
+          project-slug: ${{ steps.signpath-config.outputs.project_slug }}
+          signing-policy-slug: ${{ steps.signpath-config.outputs.signing_policy_slug }}
+          artifact-configuration-slug: ${{ steps.signpath-config.outputs.artifact_configuration_slug }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ github.workspace }}/signed-portable
+
+      - name: Pack signed zip
+        if: steps.signpath-config.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $signedRoot = Join-Path $env:GITHUB_WORKSPACE "signed-portable"
+          if (-not (Test-Path $signedRoot)) { throw "Signed output missing: $signedRoot" }
+          $gui = Get-ChildItem -Path $signedRoot -Recurse -Filter "gopro-360-gui.exe" | Select-Object -First 1
+          if (-not $gui) { throw "Signed gopro-360-gui.exe not found under signed-portable" }
+          $payload = $gui.Directory.FullName
+
+          $stageOut = Join-Path dist $env:ARTIFACT_NAME
+          if (Test-Path $stageOut) { Remove-Item -Recurse -Force $stageOut }
+          New-Item -ItemType Directory -Force -Path $stageOut | Out-Null
+          Copy-Item -Path (Join-Path $payload "*") -Destination $stageOut -Recurse -Force
+
+          $finalZip = Join-Path dist "$($env:ARTIFACT_NAME).zip"
+          if (Test-Path $finalZip) { Remove-Item -Force $finalZip }
+          Compress-Archive -Path $stageOut -DestinationPath $finalZip -Force
+          "RELEASE_ZIP=$finalZip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SIGNED=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Signed zip: $finalZip"
+          if ("${{ steps.sign.outputs.signing-request-web-url }}" -ne "") {
+            Write-Host "SignPath request: ${{ steps.sign.outputs.signing-request-web-url }}"
+          }
+
+      - name: Upload release zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.RELEASE_ZIP }}
+          if-no-files-found: error
+
+      - name: Attach zip to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          $zip = $env:RELEASE_ZIP
+          $signedNote = if ($env:SIGNED -eq "1") {
+            "Authenticode-signed via [SignPath Foundation](https://signpath.org/) (see docs/windows-code-signing.md)."
+          } else {
+            "UNSIGNED build (SignPath secrets not configured yet)."
+          }
+          $notes = @"
+          ## Windows x64
+
+          Self-contained build of gopro-360-merge $($env:VERSION).
+
+          $signedNote
+          "@
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip --clobber
+          } else {
+            gh release create $tag $zip --title $tag --notes $notes
+          }
