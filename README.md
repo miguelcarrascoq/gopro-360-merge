@@ -17,6 +17,8 @@ Download the latest zip from [GitHub Releases](https://github.com/miguelcarrasco
 
 Official Windows builds are intended to be **Authenticode-signed for free** via [SignPath Foundation](https://signpath.org/) (open source). Until that pipeline is fully approved, SmartScreen may still warn on first run — choose **More info → Run anyway**. Setup notes: [docs/windows-code-signing.md](docs/windows-code-signing.md).
 
+**Code signing policy:** Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org/). Details (roles, what is signed): [docs/code-signing-policy.md](docs/code-signing-policy.md). Privacy: [docs/privacy.md](docs/privacy.md).
+
 **macOS:** unzip and open **Gopro360Merge.app**. Use `./gopro-360-merge` for the CLI. Notarized Developer ID builds should open after download without extra steps. If an older ad-hoc build is blocked, run `xattr -cr` on the folder or use `Open GUI.command`.
 
 ### Build a release zip locally
