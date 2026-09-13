@@ -127,6 +127,7 @@ def run_merges(blocks: list[Block], output_dir: Path) -> int:
                     "join": "joining chapters",
                     "ffmpeg": "joining chapters",
                     "udtacopy": "copying udta metadata",
+                    "trim": "trimming empty GPMF",
                     "rename": "renaming to .360",
                 }
                 label = labels.get(stage, stage)
@@ -134,22 +135,29 @@ def run_merges(blocks: list[Block], output_dir: Path) -> int:
                     "probe": 0.0,
                     "join": 5.0,
                     "ffmpeg": 5.0,
-                    "udtacopy": 90.0,
+                    "udtacopy": 88.0,
+                    "trim": 92.0,
                     "rename": 97.0,
                 }
                 stage_span = {
                     "probe": 5.0,
-                    "join": 85.0,
-                    "ffmpeg": 85.0,
-                    "udtacopy": 7.0,
+                    "join": 83.0,
+                    "ffmpeg": 83.0,
+                    "udtacopy": 4.0,
+                    "trim": 5.0,
                     "rename": 3.0,
                 }
                 frac = 0.0 if total <= 0 else min(max(current / total, 0.0), 1.0)
                 completed = stage_base[stage] + stage_span[stage] * frac
                 progress.update(_task, completed=completed, description=label)
 
+            def on_notice(msg: str) -> None:
+                console.print(f"[yellow]![/yellow] {msg}")
+
             try:
-                out = merge_block(block, output_dir, on_stage=on_stage)
+                out = merge_block(
+                    block, output_dir, on_stage=on_stage, on_notice=on_notice
+                )
                 progress.update(task, completed=100.0, description=f"done → {out.name}")
                 console.print(
                     f"[green]✓[/green] Block {block.block_id} → {out}"

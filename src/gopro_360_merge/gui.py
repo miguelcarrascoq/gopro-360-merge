@@ -44,6 +44,7 @@ STAGE_LABELS = {
     "join": "Joining chapters",
     "ffmpeg": "Joining chapters",
     "udtacopy": "Copying udta metadata",
+    "trim": "Trimming empty GPMF",
     "rename": "Renaming to .360",
 }
 
@@ -62,14 +63,16 @@ def stage_progress(stage: str, current: float, total: float) -> tuple[float, str
         "probe": 0.0,
         "join": 5.0,
         "ffmpeg": 5.0,
-        "udtacopy": 90.0,
+        "udtacopy": 88.0,
+        "trim": 92.0,
         "rename": 97.0,
     }
     stage_span = {
         "probe": 5.0,
-        "join": 85.0,
-        "ffmpeg": 85.0,
-        "udtacopy": 7.0,
+        "join": 83.0,
+        "ffmpeg": 83.0,
+        "udtacopy": 4.0,
+        "trim": 5.0,
         "rename": 3.0,
     }
     frac = 0.0 if total <= 0 else min(max(current / total, 0.0), 1.0)
@@ -479,8 +482,16 @@ class App(ctk.CTk):
                         ("progress", overall, f"#{_block_id}: {label}")
                     )
 
+                def on_notice(msg: str) -> None:
+                    self._event_queue.put(("log", f"! {msg}"))
+
                 try:
-                    out = merge_block(block, output_dir, on_stage=on_stage)
+                    out = merge_block(
+                        block,
+                        output_dir,
+                        on_stage=on_stage,
+                        on_notice=on_notice,
+                    )
                     self._event_queue.put(
                         ("log", f"✓ Block {block.block_id} → {out}")
                     )

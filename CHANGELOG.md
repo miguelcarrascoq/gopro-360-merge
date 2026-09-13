@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- Skip trailing chapters whose GPMF track has no CORI/GYRO (empty stabilization).
+- After merge, trim the moov so all tracks end at the last healthy gpmd sample — fixes GoPro Player “Missing Stabilization Data” when a recording dies mid-chapter (e.g. block 1634).
+
 ## 1.0.1
 
 - GUI and bootstrap scripts use English labels/messages for a consistent cross-platform UX.

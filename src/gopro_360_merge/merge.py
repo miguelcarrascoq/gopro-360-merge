@@ -11,12 +11,15 @@ from collections.abc import Callable
 from pathlib import Path
 
 from gopro_360_merge.bundled_tools import find_bundled_binary
-from gopro_360_merge.detect import Block
+from gopro_360_merge.detect import Block, ChapterFile
+from gopro_360_merge.gpmf import filter_trailing_empty_chapters, verify_gpmd_ends_healthy
+from gopro_360_merge.moov_trim import trim_moov_to_gpmf
 from gopro_360_merge.mp4_merge_tool import ensure_mp4_merge
 from gopro_360_merge.progress import FfmpegProgressTracker
 from gopro_360_merge.udtacopy_tool import ensure_udtacopy, resolve_udtacopy
 
 ProgressCallback = Callable[[str, float, float], None]
+NoticeCallback = Callable[[str], None]
 
 
 def which_or_none(name: str) -> str | None:
@@ -375,38 +378,76 @@ def run_mp4_merge(
         on_progress(expected, expected)
 
 
+def _write_filelist_paths(paths: list[Path], filelist_path: Path) -> Path:
+    lines = []
+    for path in paths:
+        escaped = str(path.resolve()).replace("'", r"'\''")
+        lines.append(f"file '{escaped}'")
+    filelist_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return filelist_path
+
+
 def merge_block(
     block: Block,
     output_dir: Path,
     *,
     keep_filelist: bool = True,
     on_stage: ProgressCallback | None = None,
+    on_notice: NoticeCallback | None = None,
 ) -> Path:
     """
     Merge all chapters in *block* into ``final_<id>.360`` under *output_dir*.
 
     Stages reported via on_stage(stage, current, total):
-      - probe / join / udtacopy / rename
+      - probe / join / udtacopy / trim / rename
+
+    Trailing chapters with empty GPMF are skipped; after the join the moov is
+    trimmed to the last sample that still carries CORI+GYRO so GoPro Player
+    keeps stabilization controls.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     filelist_path = output_dir / f"filelist_{block.block_id}.txt"
     output_mp4 = output_dir / f"final_{block.block_id}.mp4"
     output_360 = output_dir / f"final_{block.block_id}.360"
 
+    def notice(msg: str) -> None:
+        if on_notice:
+            on_notice(msg)
+
     if on_stage:
         on_stage("probe", 0.0, 1.0)
-    total_seconds = estimate_block_duration(block)
+
+    raw_sources = [ch.path for ch in block.chapters]
+    sources, dropped = filter_trailing_empty_chapters(raw_sources)
+    for path, health in dropped:
+        notice(
+            f"Skipping {path.name}: gpmd has no CORI/GYRO "
+            f"({health.sample_count} empty sample(s))"
+        )
+
+    chapter_by_path = {c.path: c for c in block.chapters}
+    kept_block = Block(
+        block_id=block.block_id,
+        chapters=tuple(
+            ChapterFile(
+                path=p,
+                chapter=chapter_by_path[p].chapter,
+                block_id=block.block_id,
+            )
+            for p in sources
+        ),
+    )
+    total_seconds = estimate_block_duration(kept_block)
     if on_stage:
         on_stage("probe", 1.0, 1.0)
 
-    write_filelist(block, filelist_path)
+    _write_filelist_paths(sources, filelist_path)
 
     def join_progress(current: float, total: float) -> None:
         if on_stage:
             on_stage("join", current, total)
 
-    sources = [ch.path for ch in block.chapters]
-    udta_source = block.first.path
+    udta_source = sources[0]
 
     merger = ensure_mp4_merge()
     if merger is not None:
@@ -428,34 +469,41 @@ def merge_block(
             run_mp4_merge(sources, output_360, join_progress)
         if on_stage:
             on_stage("udtacopy", 1.0, 1.0)
-            on_stage("rename", 1.0, 1.0)
-        if not keep_filelist and filelist_path.exists():
-            filelist_path.unlink()
-        return output_360
-
-    # Fallback without mp4-merge: ffmpeg concat (may not pan in Player).
-    map_args = concat_map_args(sources[0])
-    if on_stage:
-        on_stage("join", 0.0, max(total_seconds, 0.001))
-    if len(sources) == 1:
-        shutil.copy2(sources[0], output_mp4)
     else:
-        run_ffmpeg_concat(
-            filelist_path, output_mp4, total_seconds, map_args, join_progress
+        # Fallback without mp4-merge: ffmpeg concat (may not pan in Player).
+        map_args = concat_map_args(sources[0])
+        if on_stage:
+            on_stage("join", 0.0, max(total_seconds, 0.001))
+        if len(sources) == 1:
+            shutil.copy2(sources[0], output_mp4)
+        else:
+            run_ffmpeg_concat(
+                filelist_path, output_mp4, total_seconds, map_args, join_progress
+            )
+
+        if on_stage:
+            on_stage("udtacopy", 0.0, 1.0)
+        run_udtacopy(udta_source, output_mp4)
+        if on_stage:
+            on_stage("udtacopy", 1.0, 1.0)
+
+        if on_stage:
+            on_stage("rename", 0.0, 1.0)
+        if output_360.exists():
+            output_360.unlink()
+        os.replace(output_mp4, output_360)
+
+    if on_stage:
+        on_stage("trim", 0.0, 1.0)
+    trimmed = trim_moov_to_gpmf(output_360)
+    if trimmed > 0:
+        notice(
+            f"Trimmed {trimmed:.1f}s of empty GPMF tail from {output_360.name} "
+            "(missing stabilization data at end of recording)"
         )
-
+    verify_gpmd_ends_healthy(output_360)
     if on_stage:
-        on_stage("udtacopy", 0.0, 1.0)
-    run_udtacopy(udta_source, output_mp4)
-    if on_stage:
-        on_stage("udtacopy", 1.0, 1.0)
-
-    if on_stage:
-        on_stage("rename", 0.0, 1.0)
-    if output_360.exists():
-        output_360.unlink()
-    os.replace(output_mp4, output_360)
-    if on_stage:
+        on_stage("trim", 1.0, 1.0)
         on_stage("rename", 1.0, 1.0)
 
     if not keep_filelist and filelist_path.exists():
