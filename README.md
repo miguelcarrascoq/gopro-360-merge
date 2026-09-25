@@ -5,9 +5,13 @@ Interactive CLI and desktop GUI to merge **chaptered GoPro `.360` files** by rec
 GoPro splits long recordings into `GS01…`, `GS02…`, … chapters. Files that share the same trailing recording ID belong to one block:
 
 ```
-GS011623.360  GS021623.360  …  GS051623.360   →  block 1623
-GS011624.360  GS021624.360  …  GS051624.360   →  block 1624
+GS01…GS08 of 1642  →  final_1642.360
+GS01…GS02 of 1643  →  final_1643.360
 ```
+
+![Chapters of each recording block joined into one final .360 file](docs/images/merge.png)
+
+Each selected block is written as `final_<id>.360`, with a `filelist_<id>.txt` listing the chapters that were joined.
 
 ## Releases (no Python install)
 
@@ -60,6 +64,8 @@ Or use the run / GUI scripts below: they create `.venv`, install the package, an
 ## Desktop GUI
 
 Cross-platform UI (macOS / Windows / Linux) with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): pick a folder, select blocks, and run **Merge**.
+
+![Desktop GUI: scan a GS*.360 folder, choose blocks, and run merge](docs/images/main-screenshot.png)
 
 ```bash
 # macOS / Linux
